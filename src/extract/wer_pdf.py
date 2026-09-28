@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 PDF_DIR = Path("data/bronze/wer/pdfs")
 EXPLORE_DIR = Path("data/explore/wer_tables")
-HEADERS = {"User-Agent": "DengueWatchLK student project (contact: your-email@example.com)"}
+HEADERS = {"User-Agent": "DengueWatchLK/0.1 (student portfolio project)"}
 
 
 def download_pdf(url: str, dest_dir: Path = PDF_DIR) -> Path:

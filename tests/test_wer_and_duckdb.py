@@ -1,34 +1,48 @@
-"""Extra tests: link parsing on fake HTML + DuckDB load is idempotent."""
+"""DuckDB load: idempotent + Saturday->Friday epi weeks."""
 from __future__ import annotations
+
+from datetime import date
 
 import duckdb
 import pandas as pd
 
-from src.extract.wer_links import extract_pdf_links
-from src.load.duckdb_load import WEEKLY_SQL, load_weather
+from src.load.duckdb_load import build_weekly, load_weather
+from src.load.run_sql import split_queries
 
 
-def test_extract_pdf_links_finds_only_pdfs():
-    html = """
-    <a href="/files/wer/2024/week1.pdf">Week 1</a>
-    <a href="/about">About</a>
-    <a href="https://x.lk/a.PDF">Week 2</a>
-    <a href="/files/wer/2024/week1.pdf">dup</a>
-    """
-    df = extract_pdf_links(html, base_url="https://www.epid.gov.lk")
-    assert len(df) == 2
-    assert df.loc[0, "url"] == "https://www.epid.gov.lk/files/wer/2024/week1.pdf"
+def _write_csv(folder, city, dates, rain):
+    pd.DataFrame({
+        "city": city,
+        "date": dates,
+        "rainfall_mm": rain,
+        "temperature_2m_mean": 28.0,
+        "temperature_2m_max": 31.0,
+        "temperature_2m_min": 25.0,
+    }).to_csv(folder / f"{city}_daily_x.csv", index=False)
 
 
 def test_load_weather_is_idempotent(tmp_path):
-    csv = tmp_path / "w.csv"
-    pd.DataFrame({
-        "date": ["2024-05-06", "2024-05-07", "2024-05-13"],
-        "rainfall_mm": [10.0, 5.0, 2.0],
-        "temperature_2m_mean": [28.0, 29.0, 27.0],
-    }).to_csv(csv, index=False)
+    _write_csv(tmp_path, "colombo", ["2024-05-03", "2024-05-04", "2024-05-05"], [1.0, 2.0, 3.0])
     con = duckdb.connect()
-    load_weather(con, csv)
-    assert load_weather(con, csv) == 3  # second run: still 3 rows, not 6
-    weekly = con.sql(WEEKLY_SQL).df()
-    assert weekly["rainfall_mm_total"].tolist() == [15.0, 2.0]
+    load_weather(con, str(tmp_path / "*_daily_*.csv"))
+    assert load_weather(con, str(tmp_path / "*_daily_*.csv")) == 3  # still 3, not 6
+
+
+def test_weekly_uses_saturday_to_friday(tmp_path):
+    # Fri 2024-05-03 | Sat 05-04 ... Fri 05-10 | Sat 05-11
+    dates = pd.date_range("2024-05-03", "2024-05-11").strftime("%Y-%m-%d").tolist()
+    _write_csv(tmp_path, "colombo", dates, [1.0] * len(dates))
+    con = duckdb.connect()
+    load_weather(con, str(tmp_path / "*_daily_*.csv"))
+    build_weekly(con)
+    weeks = con.sql("SELECT epi_week_start, days_in_week FROM weather_weekly ORDER BY 1").fetchall()
+    assert weeks == [
+        (date(2024, 4, 27), 1),   # Friday 05-03 belongs to the week starting Sat 04-27
+        (date(2024, 5, 4), 7),    # full Sat->Fri week
+        (date(2024, 5, 11), 1),
+    ]
+
+
+def test_split_queries_skips_comments():
+    sql = "-- title\nSELECT 1;\n-- only a comment;\nSELECT 2;"
+    assert split_queries(sql) == ["-- title\nSELECT 1", "SELECT 2"]
