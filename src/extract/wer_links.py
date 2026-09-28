@@ -58,7 +58,7 @@ def extract_pdf_links(html: str, base_url: str = BASE_URL) -> pd.DataFrame:
     soup = BeautifulSoup(html, "html.parser")
     rows = []
     for a in soup.find_all("a", href=True):
-        href = a["href"].strip()
+        href = str(a["href"]).strip()
         if ".pdf" in href.lower():
             rows.append({"text": a.get_text(" ", strip=True), "url": urljoin(base_url, href)})
     return pd.DataFrame(rows, columns=["text", "url"]).drop_duplicates("url").reset_index(drop=True)

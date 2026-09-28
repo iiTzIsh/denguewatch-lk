@@ -24,7 +24,8 @@ def load_weather(con: duckdb.DuckDBPyConnection, csv_path: Path) -> int:
         "CREATE OR REPLACE TABLE weather_daily AS SELECT * FROM read_csv_auto(?)",
         [str(csv_path)],
     )
-    n = con.execute("SELECT COUNT(*) FROM weather_daily").fetchone()[0]
+    row = con.execute("SELECT COUNT(*) FROM weather_daily").fetchone()
+    n = row[0] if row else 0
     logger.info("Loaded %d rows into weather_daily", n)
     return n
 

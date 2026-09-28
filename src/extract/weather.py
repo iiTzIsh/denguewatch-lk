@@ -20,7 +20,7 @@ import requests
 
 from src.log_setup import setup_logging
 
-logger = logging.getLogger(__name__)  # "__main__" when run directly, "src.extract.weather" when imported
+logger = logging.getLogger(__name__)  # "src.extract.weather" in log lines
 
 # ---- constants (no magic values buried in code) ----
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
@@ -78,7 +78,9 @@ def fetch_daily_weather(
     for attempt in range(1, retries + 1):
         try:
             logger.info("Request attempt %d/%d: %s -> %s", attempt, retries, start, end)
+            logger.debug("GET %s params=%s", ARCHIVE_URL, params)
             resp = session.get(ARCHIVE_URL, params=params, timeout=TIMEOUT_S)
+            logger.debug("Status %s", resp.status_code)
             if 400 <= resp.status_code < 500:
                 raise WeatherAPIError(f"Client error {resp.status_code}: {resp.text[:200]}")
             resp.raise_for_status()  # raises HTTPError on 5xx
@@ -107,6 +109,32 @@ def to_dataframe(payload: dict[str, Any]) -> pd.DataFrame:
     return df
 
 
+REQUIRED_COLS = ["date", "rainfall_mm", "temperature_2m_mean", "temperature_2m_max", "temperature_2m_min"]
+
+
+def validate_weather(df: pd.DataFrame) -> pd.DataFrame:
+    """Data-quality checks. Raise on bad data (fail loudly), warn on suspicious data."""
+    missing_cols = [c for c in REQUIRED_COLS if c not in df.columns]
+    if missing_cols:
+        raise WeatherAPIError(f"Missing columns: {missing_cols}")
+
+    if (df["rainfall_mm"] < 0).any():
+        raise WeatherAPIError("Negative rainfall found")
+
+    if (df["temperature_2m_min"] > df["temperature_2m_max"]).any():
+        raise WeatherAPIError("temp_min > temp_max found")
+
+    if df["date"].duplicated().any():
+        raise WeatherAPIError("Duplicate dates found")
+
+    n_null = int(df[REQUIRED_COLS].isna().sum().sum())
+    if n_null:
+        logger.warning("%d missing values in weather data", n_null)
+
+    logger.debug("Validation passed: %d rows, %s -> %s", len(df), df["date"].min(), df["date"].max())
+    return df
+
+
 def save_csv(df: pd.DataFrame, path: Path) -> Path:
     """Write CSV, creating folders if needed."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -128,7 +156,7 @@ def run_city(city: str, start: str, end: str, out_dir: Path) -> Path:
     """Fetch + convert + save for ONE city. Returns the CSV path."""
     lat, lon = CITIES[city]
     payload = fetch_daily_weather(lat, lon, start, end)
-    df = to_dataframe(payload)
+    df = validate_weather(to_dataframe(payload))
     df.insert(0, "city", city)  # first column = which city this row belongs to
     return save_csv(df, out_dir / f"{city}_daily_{start}_{end}.csv")
 
@@ -139,12 +167,13 @@ def main() -> None:
     parser.add_argument("--end", required=True, type=valid_date, help="YYYY-MM-DD")
     parser.add_argument("--city", default="colombo", choices=[*CITIES, "all"])
     parser.add_argument("--out-dir", default="data/bronze/weather")
+    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     args = parser.parse_args()
 
     if args.start > args.end:  # 'YYYY-MM-DD' strings sort correctly as text
         parser.error("--start must be on or before --end")
 
-    setup_logging()
+    setup_logging(args.log_level)
     cities = list(CITIES) if args.city == "all" else [args.city]
     failed: list[str] = []
 

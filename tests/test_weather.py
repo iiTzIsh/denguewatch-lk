@@ -110,3 +110,23 @@ def test_run_city_adds_city_and_saves(tmp_path, monkeypatch):
     assert out.name == "kandy_daily_2024-05-01_2024-05-03.csv"
     assert (df["city"] == "kandy").all()
     assert len(df) == 3
+
+
+# ---------- Day 3 tests ----------
+def test_validate_weather_passes_good_data():
+    df = weather.to_dataframe(SAMPLE_PAYLOAD)
+    assert weather.validate_weather(df) is df
+
+
+def test_validate_weather_rejects_negative_rain():
+    df = weather.to_dataframe(SAMPLE_PAYLOAD)
+    df.loc[0, "rainfall_mm"] = -5
+    with pytest.raises(weather.WeatherAPIError, match="Negative rainfall"):
+        weather.validate_weather(df)
+
+
+def test_validate_weather_rejects_min_above_max():
+    df = weather.to_dataframe(SAMPLE_PAYLOAD)
+    df.loc[1, "temperature_2m_min"] = 40.0
+    with pytest.raises(weather.WeatherAPIError, match="temp_min > temp_max"):
+        weather.validate_weather(df)
