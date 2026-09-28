@@ -46,3 +46,24 @@ def test_weekly_uses_saturday_to_friday(tmp_path):
 def test_split_queries_skips_comments():
     sql = "-- title\nSELECT 1;\n-- only a comment;\nSELECT 2;"
     assert split_queries(sql) == ["-- title\nSELECT 1", "SELECT 2"]
+
+
+# ---------- Week 2 Day 1 ----------
+def test_reference_has_every_weather_city():
+    """Real reference file: every city the extractor knows must exist in reference/cities.csv."""
+    from src.extract.weather import CITIES
+
+    ref = pd.read_csv("reference/cities.csv")
+    assert set(CITIES) <= set(ref["city"])
+    assert ref["city"].is_unique
+
+
+def test_orphan_cities_detected(tmp_path):
+    from src.load.duckdb_load import load_reference, orphan_cities
+
+    _write_csv(tmp_path, "colombo", ["2024-05-04"], [1.0])
+    _write_csv(tmp_path, "atlantis", ["2024-05-04"], [1.0])
+    con = duckdb.connect()
+    load_reference(con)
+    load_weather(con, str(tmp_path / "*_daily_*.csv"))
+    assert orphan_cities(con) == ["atlantis"]

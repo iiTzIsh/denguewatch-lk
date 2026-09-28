@@ -2,7 +2,7 @@
 Day 7: load ALL city weather CSVs into DuckDB and build a weekly table (Sat->Fri epi weeks).
 
 Run:  python -m src.load.duckdb_load
-Out:  data/denguewatch.duckdb  with tables  weather_daily, weather_weekly
+Out:  data/denguewatch.duckdb  with tables  dim_city, weather_daily, weather_weekly
 """
 from __future__ import annotations
 
@@ -17,6 +17,29 @@ logger = logging.getLogger(__name__)
 
 DB_PATH = Path("data/denguewatch.duckdb")
 WEATHER_GLOB = "data/bronze/weather/*_daily_*.csv"   # skips the old colombo_daily.csv (no city column)
+CITIES_CSV = "reference/cities.csv"
+
+
+def load_reference(con: duckdb.DuckDBPyConnection, csv_path: str = CITIES_CSV) -> int:
+    """Reference (lookup) table: one row per city. Small, hand-maintained, version-controlled in git."""
+    con.execute("CREATE OR REPLACE TABLE dim_city AS SELECT * FROM read_csv_auto(?)", [csv_path])
+    row = con.execute("SELECT COUNT(*) FROM dim_city").fetchone()
+    n = row[0] if row else 0
+    logger.info("dim_city: %d rows", n)
+    return n
+
+
+def orphan_cities(con: duckdb.DuckDBPyConnection) -> list[str]:
+    """Cities in the weather data with NO match in dim_city (anti-join). Should be empty."""
+    rows = con.execute(
+        """
+        SELECT DISTINCT w.city
+        FROM weather_daily w
+        LEFT JOIN dim_city c ON w.city = c.city
+        WHERE c.city IS NULL
+        """
+    ).fetchall()
+    return [r[0] for r in rows]
 
 
 def load_weather(con: duckdb.DuckDBPyConnection, csv_glob: str) -> int:
@@ -76,8 +99,12 @@ def main() -> None:
     setup_logging()
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with duckdb.connect(str(DB_PATH)) as con:
+        load_reference(con)
         load_weather(con, WEATHER_GLOB)
         build_weekly(con)
+        orphans = orphan_cities(con)
+        if orphans:
+            raise SystemExit(f"Weather cities missing from {CITIES_CSV}: {orphans}")
         print(con.sql("SELECT * FROM weather_weekly WHERE city = 'colombo' LIMIT 6").df().to_string())
 
 
