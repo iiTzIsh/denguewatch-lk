@@ -3,12 +3,15 @@ Fetch daily weather for one location from the Open-Meteo archive API -> CSV.
 
 Run (from project root):
     python -m src.extract.weather --start 2024-01-01 --end 2024-12-31
+    python -m src.extract.weather --start 2024-01-01 --end 2024-12-31 --city kandy
+    python -m src.extract.weather --start 2024-01-01 --end 2024-12-31 --city all
 """
 from __future__ import annotations
 
 import argparse
 import logging
 import time
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +20,7 @@ import requests
 
 from src.log_setup import setup_logging
 
-logger = logging.getLogger(__name__)  # "src.extract.weather" in log lines
+logger = logging.getLogger(__name__)  # "__main__" when run directly, "src.extract.weather" when imported
 
 # ---- constants (no magic values buried in code) ----
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
@@ -27,9 +30,16 @@ DAILY_VARS = [
     "temperature_2m_max",
     "temperature_2m_min",
 ]
-COLOMBO_LAT = 6.9271
-COLOMBO_LON = 79.8612
+# Approximate city-centre coordinates (NOT district centroids - we verify those in Phase 1)
+CITIES: dict[str, tuple[float, float]] = {
+    "colombo": (6.9271, 79.8612),
+    "kandy": (7.2906, 80.6337),
+    "galle": (6.0535, 80.2210),
+    "jaffna": (9.6615, 80.0255),
+    "kurunegala": (7.4863, 80.3647),
+}
 TIMEOUT_S = 30
+PAUSE_BETWEEN_CALLS_S = 1.0  # be polite to the free API
 
 
 class WeatherAPIError(Exception):
@@ -105,23 +115,51 @@ def save_csv(df: pd.DataFrame, path: Path) -> Path:
     return path
 
 
+def valid_date(text: str) -> str:
+    """argparse 'type' function: reject bad dates BEFORE calling the API (fail fast)."""
+    try:
+        date.fromisoformat(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"'{text}' is not a valid date (use YYYY-MM-DD)")
+    return text
+
+
+def run_city(city: str, start: str, end: str, out_dir: Path) -> Path:
+    """Fetch + convert + save for ONE city. Returns the CSV path."""
+    lat, lon = CITIES[city]
+    payload = fetch_daily_weather(lat, lon, start, end)
+    df = to_dataframe(payload)
+    df.insert(0, "city", city)  # first column = which city this row belongs to
+    return save_csv(df, out_dir / f"{city}_daily_{start}_{end}.csv")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Fetch Open-Meteo daily weather -> CSV")
-    parser.add_argument("--start", required=True, help="YYYY-MM-DD")
-    parser.add_argument("--end", required=True, help="YYYY-MM-DD")
-    parser.add_argument("--lat", type=float, default=COLOMBO_LAT)
-    parser.add_argument("--lon", type=float, default=COLOMBO_LON)
-    parser.add_argument("--out", default="data/bronze/weather/colombo_daily.csv")
+    parser.add_argument("--start", required=True, type=valid_date, help="YYYY-MM-DD")
+    parser.add_argument("--end", required=True, type=valid_date, help="YYYY-MM-DD")
+    parser.add_argument("--city", default="colombo", choices=[*CITIES, "all"])
+    parser.add_argument("--out-dir", default="data/bronze/weather")
     args = parser.parse_args()
 
+    if args.start > args.end:  # 'YYYY-MM-DD' strings sort correctly as text
+        parser.error("--start must be on or before --end")
+
     setup_logging()
-    try:
-        payload = fetch_daily_weather(args.lat, args.lon, args.start, args.end)
-        df = to_dataframe(payload)
-        save_csv(df, Path(args.out))
-        logger.info("Total rainfall: %.1f mm over %d days", df["rainfall_mm"].sum(), len(df))
-    except WeatherAPIError:
-        logger.exception("Weather fetch failed")
+    cities = list(CITIES) if args.city == "all" else [args.city]
+    failed: list[str] = []
+
+    for i, city in enumerate(cities):
+        if i > 0:
+            time.sleep(PAUSE_BETWEEN_CALLS_S)
+        try:
+            run_city(city, args.start, args.end, Path(args.out_dir))
+        except WeatherAPIError:
+            logger.exception("Failed for %s - continuing with the rest", city)
+            failed.append(city)
+
+    logger.info("Done: %d ok, %d failed", len(cities) - len(failed), len(failed))
+    if failed:
+        logger.error("Failed cities: %s", failed)
         raise SystemExit(1)
 
 
