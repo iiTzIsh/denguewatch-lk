@@ -9,3 +9,5 @@ scratch/
 .env
 infra/airflow/logs/
 infra/airflow/config/airflow.cfg
+.mypy_cache/
+.coverage
