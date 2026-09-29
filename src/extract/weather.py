@@ -19,7 +19,7 @@ from typing import Any
 import pandas as pd
 import requests
 
-from src.config import REFERENCE_DIR, WEATHER_BRONZE_DIR
+from src.config import REFERENCE_DIR, WEATHER_BRONZE_DIR, WEATHER_MODEL
 from src.log_setup import setup_logging
 
 logger = logging.getLogger(__name__)  # "src.extract.weather" in log lines
@@ -32,11 +32,12 @@ DAILY_VARS = [
     "temperature_2m_max",
     "temperature_2m_min",
 ]
-# ONE consistent reanalysis model for all years (default "best match" switches models over time -> hidden drift)
-MODEL = "era5_land"            # 0.1 deg (~11 km), 1950 -> present, ~5 day delay
+# ONE consistent reanalysis for all years (default "best_match" switches to IFS from 2017 -> hidden drift).
+# NOT era5_land: it has no precipitation (Open-Meteo docs) - we learned that from a failed backfill.
+MODEL = WEATHER_MODEL          # "era5_seamless" by default (see src/config.py)
 DISTRICTS_CSV = REFERENCE_DIR / "districts.csv"
 TIMEOUT_S = 30
-ARCHIVE_LAG_DAYS = 6  # ERA5-Land arrives ~5 days late -> ask only up to 6 days before the run date
+ARCHIVE_LAG_DAYS = 6  # ERA5 data arrives ~5 days late -> ask only up to 6 days before the run date
 PAUSE_BETWEEN_CALLS_S = 1.0  # be polite to the free API
 
 
@@ -128,6 +129,7 @@ def to_dataframe(payload: dict[str, Any]) -> pd.DataFrame:
     return df
 
 
+MAX_NULL_SHARE = 0.05   # > 5% missing in any column = reject the pull
 REQUIRED_COLS = ["date", "rainfall_mm", "temperature_2m_mean", "temperature_2m_max", "temperature_2m_min"]
 
 
@@ -146,6 +148,11 @@ def validate_weather(df: pd.DataFrame) -> pd.DataFrame:
     if df["date"].duplicated().any():
         raise WeatherAPIError("Duplicate dates found")
 
+    # Missing values: a few = warn; a lot = the source is broken -> FAIL LOUDLY (lesson from the ERA5-Land backfill)
+    null_share = df[REQUIRED_COLS].isna().mean()
+    too_many = null_share[null_share > MAX_NULL_SHARE]
+    if not too_many.empty:
+        raise WeatherAPIError(f"Too many missing values: {too_many.round(3).to_dict()}")
     n_null = int(df[REQUIRED_COLS].isna().sum().sum())
     if n_null:
         logger.warning("%d missing values in weather data", n_null)

@@ -12,7 +12,7 @@ from airflow.models import DagBag  # noqa: E402
 def test_dags_load_without_errors():
     bag = DagBag(dag_folder=str(Path(__file__).parents[1] / "dags"))
     assert bag.import_errors == {}
-    assert {"denguewatch_weekly", "wer_ingest_weekly"} <= set(bag.dag_ids)
+    assert {"denguewatch_weekly", "wer_ingest_weekly", "ndcu_ingest_weekly"} <= set(bag.dag_ids)
 
 
 def test_weekly_dag_task_order():

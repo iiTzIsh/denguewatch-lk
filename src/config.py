@@ -26,8 +26,15 @@ LOG_DIR = _path("DW_LOG_DIR", PROJECT_ROOT / "logs")
 DB_PATH = _path("DW_DB_PATH", DATA_DIR / "denguewatch.duckdb")
 
 BRONZE_DIR = DATA_DIR / "bronze"
-WEATHER_BRONZE_DIR = BRONZE_DIR / "weather_district"   # old city-level pulls stay in bronze/weather (unused)
+# Weather model is part of the bronze path: raw data from different models is NEVER mixed or overwritten.
+# era5_seamless = ERA5 precipitation + ERA5-Land temperature, one consistent reanalysis for all years.
+WEATHER_MODEL = os.getenv("DW_WEATHER_MODEL", "era5_seamless")
+WEATHER_BRONZE_DIR = BRONZE_DIR / "weather_district" / WEATHER_MODEL
 WER_BRONZE_DIR = BRONZE_DIR / "wer"
+
+NDCU_BRONZE_DIR = BRONZE_DIR / "ndcu" / "weekly"             # raw weekly update PDFs
+PARSED_DIR = DATA_DIR / "parsed"                               # tables extracted from PDFs (-> silver)
+QUARANTINE_DIR = DATA_DIR / "quarantine"                       # files that failed parsing/validation
 
 REFERENCE_DIR = PROJECT_ROOT / "reference"   # small files, versioned in git
 SQL_DIR = PROJECT_ROOT / "sql"

@@ -95,9 +95,18 @@ def test_validate_weather_rejects_missing_column(weather_df):
         weather.validate_weather(weather_df.drop(columns=["rainfall_mm"]))
 
 
-def test_validate_weather_warns_on_nulls(weather_df, caplog):
-    weather_df.loc[0, "rainfall_mm"] = None
-    weather.validate_weather(weather_df)
+def test_validate_weather_rejects_mostly_empty_column(weather_df):
+    weather_df["rainfall_mm"] = None          # what ERA5-Land gave us for rainfall
+    with pytest.raises(weather.WeatherAPIError, match="Too many missing"):
+        weather.validate_weather(weather_df)
+
+
+def test_validate_weather_warns_on_few_nulls(caplog):
+    dates = pd.date_range("2024-01-01", periods=40).date
+    df = pd.DataFrame({"date": dates, "rainfall_mm": 1.0, "temperature_2m_mean": 28.0,
+                       "temperature_2m_max": 31.0, "temperature_2m_min": 25.0})
+    df.loc[0, "rainfall_mm"] = None           # 1 of 40 = 2.5% -> below the 5% limit
+    weather.validate_weather(df)
     assert "1 missing values" in caplog.text  # caplog captures log output
 
 
@@ -119,7 +128,7 @@ def test_rate_limit_stops_immediately():
 
 
 def test_params_pin_one_model():
-    assert weather.build_params(7.0, 80.0, "2024-01-01", "2024-01-02")["models"] == "era5_land"
+    assert weather.build_params(7.0, 80.0, "2024-01-01", "2024-01-02")["models"] == "era5_seamless"
 
 
 def test_save_csv_creates_folders(tmp_path):

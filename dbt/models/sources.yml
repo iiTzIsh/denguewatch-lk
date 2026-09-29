@@ -11,6 +11,10 @@ sources:
         description: One row per district per Sat->Fri epi week
       - name: dim_district
         description: 25 districts with centroids, from reference/districts.csv (geoBoundaries/OSM)
+      - name: dim_rdhs
+        description: 26 RDHS regions (25 districts, Ampara split into Ampara + Kalmunai) -> district
+      - name: ndcu_weekly_cases
+        description: Parsed NDCU weekly update PDFs. ISO weeks (Monday -> Sunday), one row per RDHS per week.
 
   - name: scd2
     description: SCD Type 2 table maintained incrementally by src/transform/scd2.py
