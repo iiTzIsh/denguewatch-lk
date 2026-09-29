@@ -1,4 +1,5 @@
-# One command: docker compose run --rm pipeline
+# Pipeline (one-off):  docker compose run --rm pipeline
+# Dashboard:           docker compose up -d dashboard   ->  http://localhost:8501
 services:
   pipeline:
     build: .                      # build the image from ./Dockerfile
@@ -9,3 +10,13 @@ services:
     environment:
       DW_DATA_DIR: /app/data
       DW_LOG_DIR: /app/logs
+
+  dashboard:
+    image: denguewatch-pipeline         # same image as the pipeline (built by the service above)
+    command: ["streamlit", "run", "dashboard/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data:ro             # read-only: the dashboard never writes to the warehouse
+    environment:
+      DW_DATA_DIR: /app/data

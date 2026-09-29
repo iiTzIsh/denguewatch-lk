@@ -36,6 +36,7 @@ NDCU website          ─┘    retries · logging ·          ↓  load + valid
 | **SCD Type 2** | Region dimension built from dated reference snapshots (hash change detection, point-in-time joins, idempotent, out-of-order guard) — *currently demo data* |
 | **Gold (dbt)** | `dbt-duckdb` staging + marts, **21 data tests** (unique, not_null, relationships, accepted values, ranges, grain, reconciliation vs silver) + docs |
 | **Orchestration** | **Airflow 3.3.2** (LocalExecutor, Docker Compose): weekly DAG `extract → silver → SCD2 → dbt build → dbt docs`; separate WER DAG so a flaky government site doesn't block the pipeline |
+| **Dashboard** | Streamlit: district map of weekly cases, KPIs, national + district trends, rainfall 1–4 weeks earlier, table view, data-freshness line and disclaimer |
 | **Quality** | GitHub Actions CI on every push: ruff + mypy + pytest, the **full pipeline + dbt build on sample data**, and Airflow DAG integrity; real-PDF regression tests; config via environment variables |
 
 ## Run it
@@ -50,6 +51,11 @@ pytest
 **Docker (one-off pipeline run):**
 ```bash
 docker compose run --rm pipeline
+```
+**Dashboard (Streamlit):**
+```bash
+pip install -r requirements-dashboard.txt
+streamlit run dashboard/app.py                            # http://localhost:8501
 ```
 **Airflow (scheduled):**
 ```bash
@@ -84,7 +90,7 @@ docs/            data model, source notes, design decisions
 - [ ] Phase 2 – Silver: WER PDF table parser, region mapping (real MOH changes), quality gates
 - [ ] Phase 3 – Gold: dengue fact table, ML feature mart (lags, endemic channel)
 - [ ] Phase 4 – ML: baselines vs LightGBM, walk-forward backtest, MLflow
-- [ ] Phase 5 – Serving: FastAPI, Streamlit + Folium map, weekly Top-5 alert
+- [ ] Phase 5 – Serving: ~~Streamlit + Folium map~~ ✅ (monitoring), FastAPI, weekly Top-5 alert
 - [ ] Phase 6 – Production: GitHub Actions CI, drift monitoring, demo video
 - [ ] Phase 7 – Cloud: Azure (Data Factory, storage) + Databricks Free Edition
 
