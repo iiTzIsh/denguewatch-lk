@@ -14,13 +14,13 @@ from pathlib import Path
 
 import duckdb
 
+from src.config import DB_PATH, SQL_DIR
 from src.log_setup import setup_logging
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path("data/denguewatch.duckdb")
-MODELS_DIR = Path("sql/models")
-TESTS_DIR = Path("sql/tests")
+MODELS_DIR = SQL_DIR / "models"
+TESTS_DIR = SQL_DIR / "tests"
 
 
 def run_models(con: duckdb.DuckDBPyConnection, models_dir: Path = MODELS_DIR) -> list[str]:

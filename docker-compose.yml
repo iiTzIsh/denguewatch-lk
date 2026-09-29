@@ -1,0 +1,11 @@
+# One command: docker compose run --rm pipeline
+services:
+  pipeline:
+    build: .                      # build the image from ./Dockerfile
+    image: denguewatch-pipeline
+    volumes:
+      - ./data:/app/data          # your local data folder <-> container /app/data
+      - ./logs:/app/logs
+    environment:
+      DW_DATA_DIR: /app/data
+      DW_LOG_DIR: /app/logs

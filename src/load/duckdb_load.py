@@ -11,13 +11,13 @@ from pathlib import Path
 
 import duckdb
 
+from src.config import DB_PATH, REFERENCE_DIR, WEATHER_BRONZE_DIR
 from src.log_setup import setup_logging
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path("data/denguewatch.duckdb")
-WEATHER_GLOB = "data/bronze/weather/*_daily_*.csv"   # skips the old colombo_daily.csv (no city column)
-CITIES_CSV = "reference/cities.csv"
+WEATHER_GLOB = str(WEATHER_BRONZE_DIR / "*_daily_*.csv")   # skips the old colombo_daily.csv (no city column)
+CITIES_CSV = str(REFERENCE_DIR / "cities.csv")
 
 
 def load_reference(con: duckdb.DuckDBPyConnection, csv_path: str = CITIES_CSV) -> int:

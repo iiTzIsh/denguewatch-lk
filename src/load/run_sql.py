@@ -11,7 +11,8 @@ from pathlib import Path
 
 import duckdb
 
-DB_PATH = Path("data/denguewatch.duckdb")
+from src.config import DB_PATH
+
 
 
 def split_queries(sql_text: str) -> list[str]:

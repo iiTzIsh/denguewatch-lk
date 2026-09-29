@@ -22,13 +22,14 @@ from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from src.config import WER_BRONZE_DIR
 from src.log_setup import setup_logging
 
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://www.epid.gov.lk"
 WER_PAGE = f"{BASE_URL}/weekly-epidemiological-report"
-BRONZE_DIR = Path("data/bronze/wer")
+BRONZE_DIR = WER_BRONZE_DIR
 USER_AGENT = "DengueWatchLK/0.1 (student portfolio project)"
 
 # Listing text looks like: "Week 18 2024.04.27 - 2024.05.03 - The Commercial Dete..."
@@ -115,7 +116,11 @@ def main() -> None:
         raise SystemExit("robots.txt disallows this page - stop and check manually.")
 
     session = make_session()
-    html = get_page_cached(session, WER_PAGE, BRONZE_DIR / f"index_{date.today():%Y%m%d}.html", args.refresh)
+    try:
+        html = get_page_cached(session, WER_PAGE, BRONZE_DIR / f"index_{date.today():%Y%m%d}.html", args.refresh)
+    except requests.RequestException as exc:
+        logger.error("Could not download %s: %s", WER_PAGE, exc)
+        raise SystemExit(1)
     links = extract_pdf_links(html)
     out = BRONZE_DIR / "pdf_links.csv"
     links.to_csv(out, index=False)

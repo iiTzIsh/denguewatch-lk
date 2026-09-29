@@ -18,6 +18,7 @@ from typing import Any
 import pandas as pd
 import requests
 
+from src.config import WEATHER_BRONZE_DIR
 from src.log_setup import setup_logging
 
 logger = logging.getLogger(__name__)  # "src.extract.weather" in log lines
@@ -166,7 +167,7 @@ def main() -> None:
     parser.add_argument("--start", required=True, type=valid_date, help="YYYY-MM-DD")
     parser.add_argument("--end", required=True, type=valid_date, help="YYYY-MM-DD")
     parser.add_argument("--city", default="colombo", choices=[*CITIES, "all"])
-    parser.add_argument("--out-dir", default="data/bronze/weather")
+    parser.add_argument("--out-dir", default=str(WEATHER_BRONZE_DIR))
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     args = parser.parse_args()
 

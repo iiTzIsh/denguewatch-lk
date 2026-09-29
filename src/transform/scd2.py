@@ -19,12 +19,12 @@ from pathlib import Path
 
 import duckdb
 
+from src.config import DB_PATH, REFERENCE_DIR
 from src.log_setup import setup_logging
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path("data/denguewatch.duckdb")
-SNAPSHOT_DIR = Path("reference/moh_snapshots")
+SNAPSHOT_DIR = REFERENCE_DIR / "moh_snapshots"
 OPEN_END = "9999-12-31"   # industry convention: 'still valid' = far-future date (no NULLs in BETWEEN)
 TRACKED = ["district", "parent_moh_area", "boundary_note"]   # a change in these = new version
 

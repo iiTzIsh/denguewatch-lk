@@ -5,10 +5,12 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+from src.config import LOG_DIR
+
 LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
 
 
-def setup_logging(level: str = "INFO", log_file: str | None = "logs/pipeline.log") -> None:
+def setup_logging(level: str = "INFO", log_file: str | Path | None = LOG_DIR / "pipeline.log") -> None:
     """Console + rotating file log. Call once at the start of main()."""
     handlers: list[logging.Handler] = [logging.StreamHandler()]
     if log_file:

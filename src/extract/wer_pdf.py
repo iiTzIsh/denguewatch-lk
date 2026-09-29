@@ -18,12 +18,13 @@ import pandas as pd
 import pdfplumber
 import requests
 
+from src.config import DATA_DIR, WER_BRONZE_DIR
 from src.log_setup import setup_logging
 
 logger = logging.getLogger(__name__)
 
-PDF_DIR = Path("data/bronze/wer/pdfs")
-EXPLORE_DIR = Path("data/explore/wer_tables")
+PDF_DIR = WER_BRONZE_DIR / "pdfs"
+EXPLORE_DIR = DATA_DIR / "explore" / "wer_tables"
 HEADERS = {"User-Agent": "DengueWatchLK/0.1 (student portfolio project)"}
 
 
