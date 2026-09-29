@@ -1,0 +1,150 @@
+"""
+DengueWatch LK - read-only REST API over the gold layer.
+
+Run:   uvicorn src.api.main:app --reload            ->  http://localhost:8000/docs  (interactive docs)
+Endpoints:
+  GET /health                          warehouse reachable + data freshness
+  GET /weeks                           ISO weeks with NDCU data (newest first)
+  GET /hotspots?week=2026-W37&top=5    districts ranked by cases for a week (default: latest)
+  GET /districts                       the 25 districts
+  GET /districts/{district}/trend      weekly cases (+ rainfall) for one district
+"""
+from __future__ import annotations
+
+from collections.abc import Iterator
+from datetime import date
+from typing import Annotated
+
+import duckdb
+from fastapi import Depends, FastAPI, HTTPException, Query
+from pydantic import BaseModel
+
+from src.reports import dashboard_data as dd
+
+DISCLAIMER = "Portfolio project - not official health advice. Source: NDCU weekly updates, Open-Meteo (CC BY 4.0)."
+
+app = FastAPI(
+    title="DengueWatch LK API",
+    version="0.1.0",
+    description=f"Weekly dengue cases and weather per Sri Lankan district. {DISCLAIMER}",
+)
+
+
+# ---------- response models (shape of the JSON = the API contract) ----------
+class Health(BaseModel):
+    status: str
+    dengue_data_until: date | None
+    weather_data_until: date | None
+
+
+class Hotspot(BaseModel):
+    rank: int
+    district: str
+    province: str
+    cases: int
+    change_vs_prev_week: int | None
+    rain_2wk_earlier_mm: float | None
+
+
+class HotspotsResponse(BaseModel):
+    week: str
+    week_start: date
+    total_cases: int
+    districts: list[Hotspot]
+    disclaimer: str = DISCLAIMER
+
+
+class District(BaseModel):
+    district: str
+    district_name: str
+    province: str
+    latitude: float
+    longitude: float
+
+
+class TrendPoint(BaseModel):
+    week: str
+    week_start: date
+    cases: int
+    rain_mm: float | None
+
+
+# ---------- one read-only connection per request ----------
+def get_con() -> Iterator[duckdb.DuckDBPyConnection]:
+    try:
+        con = dd.connect()
+    except duckdb.Error as exc:   # file missing, or the pipeline is writing right now
+        raise HTTPException(503, f"Warehouse not available: {exc}") from exc
+    try:
+        yield con
+    finally:
+        con.close()
+
+
+Con = Annotated[duckdb.DuckDBPyConnection, Depends(get_con)]
+
+
+def _none_if_nan(v: object) -> float | None:
+    return None if v is None or v != v else float(v)  # type: ignore[arg-type]
+
+
+# ---------- endpoints ----------
+@app.get("/health", response_model=Health)
+def health(con: Con) -> Health:
+    f = dd.freshness(con)
+    return Health(status="ok", dengue_data_until=f["ndcu_until"], weather_data_until=f["weather_until"])
+
+
+@app.get("/weeks", response_model=list[str])
+def weeks(con: Con) -> list[str]:
+    return dd.available_weeks(con)
+
+
+@app.get("/hotspots", response_model=HotspotsResponse)
+def hotspots(
+    con: Con,
+    week: Annotated[str | None, Query(pattern=r"^\d{4}-W\d{2}$", examples=["2026-W37"])] = None,
+    top: Annotated[int, Query(ge=1, le=25)] = 5,
+) -> HotspotsResponse:
+    available = dd.available_weeks(con)
+    if not available:
+        raise HTTPException(404, "No NDCU data loaded yet")
+    week = week or available[0]
+    if week not in available:
+        raise HTTPException(404, f"No data for week {week}. See /weeks")
+    snap = dd.week_snapshot(con, week)
+    rows = [
+        Hotspot(
+            rank=i,
+            district=str(r["district"]),
+            province=str(r["province"]),
+            cases=int(r["cases"]),
+            change_vs_prev_week=None if _none_if_nan(r["change_vs_prev_week"]) is None
+            else int(r["change_vs_prev_week"]),
+            rain_2wk_earlier_mm=_none_if_nan(r["rain_lag2_mm"]),
+        )
+        for i, r in enumerate(snap.head(top).to_dict("records"), 1)
+    ]
+    return HotspotsResponse(week=week, week_start=snap["week_start"].iloc[0].date(),
+                            total_cases=int(snap["cases"].sum()), districts=rows)
+
+
+@app.get("/districts", response_model=list[District])
+def districts(con: Con) -> list[District]:
+    df = con.execute(
+        "SELECT district, district_name, province, latitude, longitude FROM gold.dim_district "
+        "WHERE district <> 'unknown' ORDER BY district"
+    ).df()
+    return [District(**{str(k): v for k, v in r.items()}) for r in df.to_dict("records")]
+
+
+@app.get("/districts/{district}/trend", response_model=list[TrendPoint])
+def district_trend(con: Con, district: str) -> list[TrendPoint]:
+    df = dd.district_trend(con, district.lower())
+    if df.empty:
+        raise HTTPException(404, f"Unknown district or no data: {district}. See /districts")
+    return [
+        TrendPoint(week=str(r["iso_week_key"]), week_start=r["week_start"].date(),
+                   cases=int(r["cases"]), rain_mm=_none_if_nan(r["rain_mm"]))
+        for r in df.to_dict("records")
+    ]

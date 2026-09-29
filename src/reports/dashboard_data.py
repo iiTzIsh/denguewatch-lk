@@ -1,6 +1,7 @@
 """Read-only queries behind the dashboard (kept separate from the UI so they can be unit-tested)."""
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import duckdb
@@ -70,7 +71,7 @@ def district_rain(con: duckdb.DuckDBPyConnection, district: str, since: str) -> 
     ).df()
 
 
-def freshness(con: duckdb.DuckDBPyConnection) -> dict[str, object]:
+def freshness(con: duckdb.DuckDBPyConnection) -> dict[str, date | None]:
     row = con.execute(
         """
         SELECT (SELECT max(week_end) FROM gold.fact_dengue_ndcu_weekly),

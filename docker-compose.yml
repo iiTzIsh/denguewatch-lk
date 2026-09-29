@@ -1,5 +1,6 @@
 # Pipeline (one-off):  docker compose run --rm pipeline
 # Dashboard:           docker compose up -d dashboard   ->  http://localhost:8501
+# API:                 docker compose up -d api         ->  http://localhost:8000/docs
 services:
   pipeline:
     build: .                      # build the image from ./Dockerfile
@@ -18,5 +19,15 @@ services:
       - "8501:8501"
     volumes:
       - ./data:/app/data:ro             # read-only: the dashboard never writes to the warehouse
+    environment:
+      DW_DATA_DIR: /app/data
+
+  api:
+    image: denguewatch-pipeline
+    command: ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data:ro             # read-only
     environment:
       DW_DATA_DIR: /app/data

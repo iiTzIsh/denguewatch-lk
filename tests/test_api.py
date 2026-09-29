@@ -1,0 +1,61 @@
+"""API tests on a tiny hand-made warehouse file (TestClient = real HTTP calls, no server needed)."""
+from __future__ import annotations
+
+import duckdb
+import pytest
+
+fastapi = pytest.importorskip("fastapi")
+from fastapi.testclient import TestClient  # noqa: E402
+
+from src.api import main  # noqa: E402
+from src.reports import dashboard_data as dd  # noqa: E402
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    db = tmp_path / "w.duckdb"
+    con = duckdb.connect(str(db))
+    con.execute("CREATE SCHEMA gold")
+    con.execute("""CREATE TABLE gold.mart_ndcu_monitoring AS SELECT * FROM (VALUES
+        ('colombo','Western','2026-W36',DATE '2026-08-31',222,NULL,false,50.0,40.0,30.0),
+        ('colombo','Western','2026-W37',DATE '2026-09-07',207,-15,false,60.0,45.0,35.0),
+        ('kandy','Central','2026-W37',DATE '2026-09-07',174,16,true,20.0,NULL,5.0)
+      ) t(district, province, iso_week_key, week_start, cases, cases_change_vs_prev_week, any_restated,
+          rainfall_mm_total, rain_lag2_mm, rain_lag4_mm)""")
+    con.execute("""CREATE TABLE gold.dim_district AS SELECT * FROM (VALUES
+        ('-1','unknown','Unknown','Unknown',NULL,NULL),
+        ('a','colombo','Colombo','Western',6.87,80.02), ('b','kandy','Kandy','Central',7.27,80.71)
+      ) t(district_sk, district, district_name, province, latitude, longitude)""")
+    con.execute("CREATE TABLE gold.fact_dengue_ndcu_weekly AS SELECT DATE '2026-09-13' AS week_end")
+    con.execute("CREATE TABLE main.weather_daily AS SELECT DATE '2026-09-23' AS date")
+    con.close()
+    monkeypatch.setattr(dd, "DB_PATH", db)
+    monkeypatch.setattr(dd.connect, "__defaults__", (db,))
+    return TestClient(main.app)
+
+
+def test_health(client):
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok", "dengue_data_until": "2026-09-13", "weather_data_until": "2026-09-23"}
+
+
+def test_hotspots_default_latest_week(client):
+    body = client.get("/hotspots").json()
+    assert body["week"] == "2026-W37" and body["total_cases"] == 381
+    assert [d["district"] for d in body["districts"]] == ["colombo", "kandy"]
+    assert body["districts"][1]["rain_2wk_earlier_mm"] is None        # NaN -> null in JSON
+    assert "not official health advice" in body["disclaimer"]
+
+
+def test_hotspots_validation_and_404(client):
+    assert client.get("/hotspots?week=2026-37").status_code == 422      # bad format
+    assert client.get("/hotspots?top=0").status_code == 422             # out of range
+    assert client.get("/hotspots?week=2020-W01").status_code == 404     # no data
+
+
+def test_districts_and_trend(client):
+    assert [d["district"] for d in client.get("/districts").json()] == ["colombo", "kandy"]
+    trend = client.get("/districts/Colombo/trend").json()
+    assert [p["week"] for p in trend] == ["2026-W36", "2026-W37"]
+    assert client.get("/districts/atlantis/trend").status_code == 404

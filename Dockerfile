@@ -7,8 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # 1) dependencies first (cached layer until requirement files change)
-COPY requirements.txt requirements-dbt.txt requirements-dashboard.txt ./
-RUN pip install --no-cache-dir -r requirements.txt -r requirements-dbt.txt -r requirements-dashboard.txt
+COPY requirements.txt requirements-dbt.txt requirements-dashboard.txt requirements-api.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-dbt.txt -r requirements-dashboard.txt \
+    -r requirements-api.txt
 
 # 2) code
 COPY src/ src/

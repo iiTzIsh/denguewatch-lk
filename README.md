@@ -37,6 +37,7 @@ NDCU website          ─┘    retries · logging ·          ↓  load + valid
 | **Gold (dbt)** | `dbt-duckdb` staging + marts, **21 data tests** (unique, not_null, relationships, accepted values, ranges, grain, reconciliation vs silver) + docs |
 | **Orchestration** | **Airflow 3.3.2** (LocalExecutor, Docker Compose): weekly DAG `extract → silver → SCD2 → dbt build → dbt docs`; separate WER DAG so a flaky government site doesn't block the pipeline |
 | **Dashboard** | Streamlit: district map of weekly cases, KPIs, national + district trends, rainfall 1–4 weeks earlier, table view, data-freshness line and disclaimer |
+| **Alerts & API** | Weekly Telegram message (top districts, sent once per week, only after a green dbt build); read-only FastAPI with typed responses, input validation and OpenAPI docs |
 | **Quality** | GitHub Actions CI on every push: ruff + mypy + pytest, the **full pipeline + dbt build on sample data**, and Airflow DAG integrity; real-PDF regression tests; config via environment variables |
 
 ## Run it
@@ -57,6 +58,18 @@ docker compose run --rm pipeline
 pip install -r requirements-dashboard.txt
 streamlit run dashboard/app.py                            # http://localhost:8501
 ```
+**REST API (FastAPI):**
+```bash
+pip install -r requirements-api.txt
+uvicorn src.api.main:app --reload                          # http://localhost:8000/docs
+```
+| Endpoint | Returns |
+|---|---|
+| `GET /health` | status + how fresh the dengue and weather data are |
+| `GET /weeks` | ISO weeks with NDCU data |
+| `GET /hotspots?week=2026-W37&top=5` | districts ranked by cases (default: latest week) |
+| `GET /districts` · `GET /districts/{district}/trend` | district list · weekly cases + rainfall |
+
 **Airflow (scheduled):**
 ```bash
 docker compose -f docker-compose.airflow.yml up airflow-init
@@ -90,7 +103,7 @@ docs/            data model, source notes, design decisions
 - [ ] Phase 2 – Silver: WER PDF table parser, region mapping (real MOH changes), quality gates
 - [ ] Phase 3 – Gold: dengue fact table, ML feature mart (lags, endemic channel)
 - [ ] Phase 4 – ML: baselines vs LightGBM, walk-forward backtest, MLflow
-- [ ] Phase 5 – Serving: ~~Streamlit + Folium map~~ ✅ (monitoring), FastAPI, weekly Top-5 alert
+- [x] Phase 5 – Serving: Streamlit + Folium map, FastAPI, weekly Telegram alert (monitoring; forecasts come with Phase 4)
 - [ ] Phase 6 – Production: GitHub Actions CI, drift monitoring, demo video
 - [ ] Phase 7 – Cloud: Azure (Data Factory, storage) + Databricks Free Edition
 
