@@ -18,6 +18,8 @@ def test_dags_load_without_errors():
 def test_weekly_dag_task_order():
     bag = DagBag(dag_folder=str(Path(__file__).parents[1] / "dags"))
     dag = bag.dags["denguewatch_weekly"]  # read from parsed files, no DB needed
-    assert [t.task_id for t in dag.topological_sort()] == [
-        "extract_weather", "load_silver", "scd2_regions", "dbt_build", "dbt_docs"
-    ]
+    order = [t.task_id for t in dag.topological_sort()]
+    assert order[:4] == ["extract_weather", "load_silver", "scd2_regions", "dbt_build"]
+    # docs + alert only run after a successful dbt build
+    assert dag.get_task("send_alert").upstream_task_ids == {"dbt_build"}
+    assert dag.get_task("dbt_docs").upstream_task_ids == {"dbt_build"}

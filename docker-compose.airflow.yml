@@ -8,6 +8,9 @@ x-airflow-common:
     context: .
     dockerfile: infra/airflow/Dockerfile
   image: denguewatch-airflow:3.3.2
+  env_file:                       # secrets (e.g. Telegram token) from .env - optional, never committed
+    - path: .env
+      required: false
   environment:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor

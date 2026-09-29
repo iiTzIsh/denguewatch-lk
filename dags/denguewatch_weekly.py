@@ -1,6 +1,7 @@
 """
 DAG: denguewatch_weekly
-Every Monday 07:00 (Sri Lanka time): pull weather -> silver -> SCD2 regions -> dbt build (gold + tests) -> dbt docs.
+Every Monday 07:00 (Sri Lanka time): weather -> silver -> SCD2 -> dbt build (gold + tests)
+-> dbt docs + Telegram alert.
 
 Each task runs one of our existing modules (same commands you run by hand),
 so the pipeline code stays independent of Airflow.
@@ -60,5 +61,11 @@ with DAG(
         bash_command=f"cd {PROJECT} && {DBT} docs generate {DBT_ARGS}",
     )
 
-    # dependencies: left runs before right
-    extract_weather >> load_silver >> scd2_regions >> dbt_build >> dbt_docs
+    send_alert = BashOperator(
+        task_id="send_alert",
+        # Telegram token/chat id come from .env (docker-compose env_file). Sends once per week (idempotent).
+        bash_command=f"cd {PROJECT} && python -m src.alerts.telegram",
+    )
+
+    # dependencies: left runs before right; docs and alert both wait for a GREEN dbt build
+    extract_weather >> load_silver >> scd2_regions >> dbt_build >> [dbt_docs, send_alert]

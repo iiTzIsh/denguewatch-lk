@@ -16,6 +16,21 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _load_dotenv(path: Path = PROJECT_ROOT / ".env") -> None:
+    """Tiny .env reader (KEY=value lines). Real environment variables always win. .env is gitignored."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+_load_dotenv()
+
+
 def _path(env_var: str, default: Path) -> Path:
     value = os.getenv(env_var)
     return Path(value) if value else default
@@ -35,6 +50,8 @@ WER_BRONZE_DIR = BRONZE_DIR / "wer"
 NDCU_BRONZE_DIR = BRONZE_DIR / "ndcu" / "weekly"             # raw weekly update PDFs
 PARSED_DIR = DATA_DIR / "parsed"                               # tables extracted from PDFs (-> silver)
 QUARANTINE_DIR = DATA_DIR / "quarantine"                       # files that failed parsing/validation
+
+ALERTS_DIR = DATA_DIR / "alerts"                               # remembers which weeks were already sent
 
 REFERENCE_DIR = PROJECT_ROOT / "reference"   # small files, versioned in git
 SQL_DIR = PROJECT_ROOT / "sql"
