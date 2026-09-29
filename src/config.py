@@ -26,7 +26,7 @@ LOG_DIR = _path("DW_LOG_DIR", PROJECT_ROOT / "logs")
 DB_PATH = _path("DW_DB_PATH", DATA_DIR / "denguewatch.duckdb")
 
 BRONZE_DIR = DATA_DIR / "bronze"
-WEATHER_BRONZE_DIR = BRONZE_DIR / "weather"
+WEATHER_BRONZE_DIR = BRONZE_DIR / "weather_district"   # old city-level pulls stay in bronze/weather (unused)
 WER_BRONZE_DIR = BRONZE_DIR / "wer"
 
 REFERENCE_DIR = PROJECT_ROOT / "reference"   # small files, versioned in git

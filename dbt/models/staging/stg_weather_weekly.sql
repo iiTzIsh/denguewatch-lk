@@ -1,6 +1,6 @@
--- Staging = light cleanup + consistent names. One row per city per epi week.
+-- Staging = light cleanup + consistent names. One row per district per epi week.
 select
-    city,
+    district,
     epi_week_start,
     epi_week_end,
     rainfall_mm_total,

@@ -2,12 +2,12 @@
 
 ```mermaid
 erDiagram
-    dim_city ||--o{ fact_weather_weekly : city_sk
+    dim_district ||--o{ fact_weather_weekly : district_sk
     dim_epi_week ||--o{ fact_weather_weekly : epi_week_key
-    dim_city {
-        varchar city_sk PK "md5(city); '-1' = unknown"
-        varchar city
+    dim_district {
+        varchar district_sk PK "md5(district); '-1' = unknown"
         varchar district
+        varchar district_name
         varchar province
         double latitude
         double longitude
@@ -21,7 +21,7 @@ erDiagram
         varchar season
     }
     fact_weather_weekly {
-        varchar city_sk FK
+        varchar district_sk FK
         varchar epi_week_key FK
         double rainfall_mm_total
         double temp_mean_c
@@ -36,7 +36,7 @@ erDiagram
 | Layer | Tables | Where |
 |---|---|---|
 | Bronze | raw CSV / HTML / PDF | `data/bronze/` |
-| Silver | `weather_daily`, `weather_weekly`, `dim_city` (reference) | DuckDB `main` schema |
-| Gold | `dim_epi_week`, `dim_city`, `fact_weather_weekly` | DuckDB `gold` schema |
+| Silver | `weather_daily`, `weather_weekly`, `dim_district` (reference) | DuckDB `main` schema |
+| Gold (dbt) | `dim_epi_week`, `dim_district`, `fact_weather_weekly`, `dim_region` (SCD2, Python) | DuckDB `gold` schema |
 
-Later: `dim_city` becomes `dim_region` (SCD2), and `fact_dengue_weekly` joins the same dimensions.
+Next: `fact_dengue_weekly` joins the same dimensions.

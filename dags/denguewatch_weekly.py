@@ -39,7 +39,7 @@ with DAG(
 ) as dag:
     extract_weather = BashOperator(
         task_id="extract_weather",
-        bash_command=f"cd {PROJECT} && python -m src.extract.weather --city all --as-of {RUN_DATE} --days-back 35",
+        bash_command=f"cd {PROJECT} && python -m src.extract.weather --district all --as-of {RUN_DATE} --days-back 35",
     )
     load_silver = BashOperator(
         task_id="load_silver",

@@ -6,11 +6,11 @@ sources:
     schema: main
     tables:
       - name: weather_daily
-        description: One row per city per day (newest pull wins)
+        description: One row per district per day (newest pull wins), ERA5-Land
       - name: weather_weekly
-        description: One row per city per Sat->Fri epi week
-      - name: dim_city
-        description: Reference list from reference/cities.csv
+        description: One row per district per Sat->Fri epi week
+      - name: dim_district
+        description: 25 districts with centroids, from reference/districts.csv (geoBoundaries/OSM)
 
   - name: scd2
     description: SCD Type 2 table maintained incrementally by src/transform/scd2.py

@@ -1,11 +1,11 @@
 """
-Fetch daily weather for one location from the Open-Meteo archive API -> CSV.
+Fetch daily weather per DISTRICT (centroids in reference/districts.csv) from the Open-Meteo archive API -> CSV.
 
 Run (from project root):
-    python -m src.extract.weather --start 2024-01-01 --end 2024-12-31
-    python -m src.extract.weather --start 2024-01-01 --end 2024-12-31 --city kandy
-    python -m src.extract.weather --start 2024-01-01 --end 2024-12-31 --city all
-    python -m src.extract.weather --as-of 2026-09-28 --days-back 35 --city all   (what Airflow runs)
+    python -m src.extract.weather --start 2024-01-01 --end 2024-12-31 --district kandy
+    python -m src.extract.weather --start 2024-01-01 --end 2024-12-31 --district all
+    python -m src.extract.weather --as-of 2026-09-28 --days-back 35 --district all   (what Airflow runs)
+For many years use the resumable backfill:  python -m src.extract.weather_backfill
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from typing import Any
 import pandas as pd
 import requests
 
-from src.config import WEATHER_BRONZE_DIR
+from src.config import REFERENCE_DIR, WEATHER_BRONZE_DIR
 from src.log_setup import setup_logging
 
 logger = logging.getLogger(__name__)  # "src.extract.weather" in log lines
@@ -32,21 +32,32 @@ DAILY_VARS = [
     "temperature_2m_max",
     "temperature_2m_min",
 ]
-# Approximate city-centre coordinates (NOT district centroids - we verify those in Phase 1)
-CITIES: dict[str, tuple[float, float]] = {
-    "colombo": (6.9271, 79.8612),
-    "kandy": (7.2906, 80.6337),
-    "galle": (6.0535, 80.2210),
-    "jaffna": (9.6615, 80.0255),
-    "kurunegala": (7.4863, 80.3647),
-}
+# ONE consistent reanalysis model for all years (default "best match" switches models over time -> hidden drift)
+MODEL = "era5_land"            # 0.1 deg (~11 km), 1950 -> present, ~5 day delay
+DISTRICTS_CSV = REFERENCE_DIR / "districts.csv"
 TIMEOUT_S = 30
-ARCHIVE_LAG_DAYS = 2  # don't ask for the last couple of days - archive data arrives with a delay
+ARCHIVE_LAG_DAYS = 6  # ERA5-Land arrives ~5 days late -> ask only up to 6 days before the run date
 PAUSE_BETWEEN_CALLS_S = 1.0  # be polite to the free API
 
 
 class WeatherAPIError(Exception):
     """Raised when the API keeps failing or returns bad data."""
+
+
+class RateLimitError(WeatherAPIError):
+    """HTTP 429: free-tier limit reached. Stop now, resume later - don't hammer the API."""
+
+
+def load_districts(path: Path = DISTRICTS_CSV) -> dict[str, tuple[float, float]]:
+    """{district_slug: (lat, lon)} from the versioned reference file."""
+    ref = pd.read_csv(path)
+    return {
+        str(d): (float(lat), float(lon))
+        for d, lat, lon in zip(ref["district"], ref["latitude"], ref["longitude"])
+    }
+
+
+DISTRICTS = load_districts()
 
 
 def build_params(lat: float, lon: float, start: str, end: str) -> dict[str, Any]:
@@ -57,6 +68,7 @@ def build_params(lat: float, lon: float, start: str, end: str) -> dict[str, Any]
         "start_date": start,
         "end_date": end,
         "daily": ",".join(DAILY_VARS),
+        "models": MODEL,
         "timezone": "Asia/Colombo",
     }
 
@@ -84,6 +96,8 @@ def fetch_daily_weather(
             logger.debug("GET %s params=%s", ARCHIVE_URL, params)
             resp = session.get(ARCHIVE_URL, params=params, timeout=TIMEOUT_S)
             logger.debug("Status %s", resp.status_code)
+            if resp.status_code == 429:
+                raise RateLimitError(f"Rate limit reached (429): {resp.text[:200]}")
             if 400 <= resp.status_code < 500:
                 raise WeatherAPIError(f"Client error {resp.status_code}: {resp.text[:200]}")
             resp.raise_for_status()  # raises HTTPError on 5xx
@@ -164,13 +178,17 @@ def window_from_as_of(as_of: str, days_back: int) -> tuple[str, str]:
     return start.isoformat(), end.isoformat()
 
 
-def run_city(city: str, start: str, end: str, out_dir: Path) -> Path:
-    """Fetch + convert + save for ONE city. Returns the CSV path."""
-    lat, lon = CITIES[city]
+def output_path(out_dir: Path, district: str, start: str, end: str) -> Path:
+    return out_dir / f"{district}_daily_{start}_{end}.csv"
+
+
+def run_district(district: str, start: str, end: str, out_dir: Path) -> Path:
+    """Fetch + convert + save for ONE district. Returns the CSV path."""
+    lat, lon = DISTRICTS[district]
     payload = fetch_daily_weather(lat, lon, start, end)
     df = validate_weather(to_dataframe(payload))
-    df.insert(0, "city", city)  # first column = which city this row belongs to
-    return save_csv(df, out_dir / f"{city}_daily_{start}_{end}.csv")
+    df.insert(0, "district", district)  # first column = which district this row belongs to
+    return save_csv(df, output_path(out_dir, district, start, end))
 
 
 def main() -> None:
@@ -179,7 +197,7 @@ def main() -> None:
     parser.add_argument("--end", type=valid_date, help="YYYY-MM-DD")
     parser.add_argument("--as-of", type=valid_date, help="YYYY-MM-DD run date (instead of --start/--end)")
     parser.add_argument("--days-back", type=int, default=35, help="window size used with --as-of")
-    parser.add_argument("--city", default="colombo", choices=[*CITIES, "all"])
+    parser.add_argument("--district", default="colombo", choices=[*DISTRICTS, "all"])
     parser.add_argument("--out-dir", default=str(WEATHER_BRONZE_DIR))
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     args = parser.parse_args()
@@ -192,21 +210,24 @@ def main() -> None:
         parser.error("--start must be on or before --end")
 
     setup_logging(args.log_level)
-    cities = list(CITIES) if args.city == "all" else [args.city]
+    districts = list(DISTRICTS) if args.district == "all" else [args.district]
     failed: list[str] = []
 
-    for i, city in enumerate(cities):
+    for i, district in enumerate(districts):
         if i > 0:
             time.sleep(PAUSE_BETWEEN_CALLS_S)
         try:
-            run_city(city, args.start, args.end, Path(args.out_dir))
+            run_district(district, args.start, args.end, Path(args.out_dir))
+        except RateLimitError:
+            logger.error("Rate limit hit at %s - stopping. Re-run later.", district)
+            raise SystemExit(3)
         except WeatherAPIError:
-            logger.exception("Failed for %s - continuing with the rest", city)
-            failed.append(city)
+            logger.exception("Failed for %s - continuing with the rest", district)
+            failed.append(district)
 
-    logger.info("Done: %d ok, %d failed", len(cities) - len(failed), len(failed))
+    logger.info("Done: %d ok, %d failed", len(districts) - len(failed), len(failed))
     if failed:
-        logger.error("Failed cities: %s", failed)
+        logger.error("Failed districts: %s", failed)
         raise SystemExit(1)
 
 

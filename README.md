@@ -28,7 +28,7 @@ NDCU website          ─┘    retries · logging ·          ↓  load + valid
 ## What works today
 | Area | Details |
 |---|---|
-| **Extraction** | Open-Meteo archive API with retries/backoff, date validation, partial-failure handling, `fetched_at` lineage; WER listing scraper (robots.txt check, caching, regex parsing of epi weeks) |
+| **Extraction** | Open-Meteo archive API for all **25 districts** (centroids from geoBoundaries/OSM), pinned to **ERA5-Land** for a consistent 2006→now series, resumable year-chunked backfill that stops cleanly on rate limits, retries/backoff, `fetched_at` lineage; WER listing scraper (robots.txt check, caching, regex parsing of epi weeks) |
 | **Silver** | Multi-file load into DuckDB, **newest-pull-wins** de-duplication for overlapping pulls, orphan (referential) check |
 | **Epi weeks** | Sri Lankan epidemiological weeks run **Saturday → Friday**; calendar dimension 2006–2027 validated against WER dates |
 | **SCD Type 2** | Region dimension built from dated reference snapshots (hash change detection, point-in-time joins, idempotent, out-of-order guard) — *currently demo data* |
@@ -41,7 +41,7 @@ NDCU website          ─┘    retries · logging ·          ↓  load + valid
 ```bash
 python -m venv .venv && .venv\Scripts\activate          # Windows
 pip install -r requirements.txt -r requirements-dbt.txt
-python -m src.extract.weather --start 2024-01-01 --end 2024-12-31 --city all
+python -m src.extract.weather_backfill                   # 2006 -> now, resumable
 python -m src.pipeline                                    # silver -> SCD2 -> dbt build
 pytest
 ```
@@ -62,7 +62,7 @@ dbt/             dbt project (staging + marts + tests)
 src/extract/     weather.py, wer_links.py, wer_pdf.py
 src/load/        DuckDB loading, SQL runner
 src/transform/   SCD2 region dimension
-reference/       small versioned reference data (cities, MOH snapshots)
+reference/       small versioned reference data (districts, MOH snapshots)
 infra/airflow/   Airflow image (dbt in its own virtualenv)
 tests/           pytest
 docs/            data model, source notes, design decisions
@@ -71,13 +71,14 @@ docs/            data model, source notes, design decisions
 ## Data sources
 | Source | Use | Notes |
 |---|---|---|
-| [Open-Meteo](https://open-meteo.com/) | Daily rainfall & temperature | Free archive API, no key |
+| [Open-Meteo](https://open-meteo.com/) | Daily rainfall & temperature (ERA5-Land) | Free archive API, no key · CC BY 4.0 |
+| [geoBoundaries](https://github.com/wmgeolab/geoBoundaries) | District boundaries → centroids | gbOpen LKA ADM2, from OpenStreetMap · ODbL 1.0 |
 | [Epidemiology Unit – WER](https://www.epid.gov.lk/weekly-epidemiological-report) | Weekly dengue history (PDF) | Listing covers 2006–2024; site intermittently returns HTTP 500 |
 | [NDCU](https://www.dengue.health.gov.lk/) | Recent MOH-level cases | Planned |
 
 ## Roadmap
 - [x] Phase 0 – Foundations: tested extractors, DuckDB, Docker, Airflow, dbt
-- [ ] Phase 1 – Ingestion: district coordinates, weather backfill 2006→now, NDCU + WER ingestion
+- [ ] Phase 1 – Ingestion: ~~district coordinates~~ ✅, weather backfill 2006→now, NDCU + WER ingestion
 - [ ] Phase 2 – Silver: WER PDF table parser, region mapping (real MOH changes), quality gates
 - [ ] Phase 3 – Gold: dengue fact table, ML feature mart (lags, endemic channel)
 - [ ] Phase 4 – ML: baselines vs LightGBM, walk-forward backtest, MLflow

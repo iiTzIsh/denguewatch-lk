@@ -102,13 +102,24 @@ def test_validate_weather_warns_on_nulls(weather_df, caplog):
 
 
 # ---------- file output ----------
-def test_run_city_adds_city_and_saves(tmp_path, monkeypatch, sample_payload):
+def test_run_district_adds_district_and_saves(tmp_path, monkeypatch, sample_payload):
     monkeypatch.setattr(weather, "fetch_daily_weather", lambda *a, **k: sample_payload)
-    out = weather.run_city("kandy", "2024-05-01", "2024-05-03", tmp_path)
+    out = weather.run_district("kandy", "2024-05-01", "2024-05-03", tmp_path)
     df = pd.read_csv(out)
     assert out.name == "kandy_daily_2024-05-01_2024-05-03.csv"
-    assert (df["city"] == "kandy").all()
+    assert (df["district"] == "kandy").all()
     assert len(df) == 3
+
+
+def test_rate_limit_stops_immediately():
+    session = FakeSession([FakeResponse(429, {"reason": "Daily API request limit exceeded"})])
+    with pytest.raises(weather.RateLimitError):
+        weather.fetch_daily_weather(6.93, 79.86, "2024-01-01", "2024-01-31", session=session)
+    assert session.calls == 1
+
+
+def test_params_pin_one_model():
+    assert weather.build_params(7.0, 80.0, "2024-01-01", "2024-01-02")["models"] == "era5_land"
 
 
 def test_save_csv_creates_folders(tmp_path):
@@ -126,4 +137,4 @@ def test_real_api_colombo_one_week():
 
 # ---------- Week 3: --as-of window ----------
 def test_window_from_as_of():
-    assert weather.window_from_as_of("2026-09-28", 35) == ("2026-08-23", "2026-09-26")
+    assert weather.window_from_as_of("2026-09-28", 35) == ("2026-08-19", "2026-09-22")  # 6-day ERA5-Land lag

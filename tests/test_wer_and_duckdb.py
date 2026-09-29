@@ -10,15 +10,15 @@ from src.load.duckdb_load import build_weekly, load_weather
 from src.load.run_sql import split_queries
 
 
-def _write_csv(folder, city, dates, rain):
+def _write_csv(folder, district, dates, rain):
     pd.DataFrame({
-        "city": city,
+        "district": district,
         "date": dates,
         "rainfall_mm": rain,
         "temperature_2m_mean": 28.0,
         "temperature_2m_max": 31.0,
         "temperature_2m_min": 25.0,
-    }).to_csv(folder / f"{city}_daily_x.csv", index=False)
+    }).to_csv(folder / f"{district}_daily_x.csv", index=False)
 
 
 def test_load_weather_is_idempotent(tmp_path):
@@ -49,28 +49,30 @@ def test_split_queries_skips_comments():
 
 
 # ---------- Week 2 Day 1 ----------
-def test_reference_has_every_weather_city():
-    """Real reference file: every city the extractor knows must exist in reference/cities.csv."""
-    from src.extract.weather import CITIES
+def test_districts_reference_is_complete():
+    """Real reference file: 25 unique districts, 9 provinces, coordinates inside Sri Lanka's bounding box."""
+    from src.extract.weather import DISTRICTS
 
-    ref = pd.read_csv("reference/cities.csv")
-    assert set(CITIES) <= set(ref["city"])
-    assert ref["city"].is_unique
+    ref = pd.read_csv("reference/districts.csv")
+    assert len(ref) == 25 and ref["district"].is_unique
+    assert ref["province"].nunique() == 9
+    assert ref["latitude"].between(5.9, 9.9).all() and ref["longitude"].between(79.5, 81.95).all()
+    assert set(DISTRICTS) == set(ref["district"])
 
 
-def test_orphan_cities_detected(tmp_path):
-    from src.load.duckdb_load import load_reference, orphan_cities
+def test_orphan_districts_detected(tmp_path):
+    from src.load.duckdb_load import load_reference, orphan_districts
 
     _write_csv(tmp_path, "colombo", ["2024-05-04"], [1.0])
     _write_csv(tmp_path, "atlantis", ["2024-05-04"], [1.0])
     con = duckdb.connect()
     load_reference(con)
     load_weather(con, str(tmp_path / "*_daily_*.csv"))
-    assert orphan_cities(con) == ["atlantis"]
+    assert orphan_districts(con) == ["atlantis"]
 
 
 def test_overlapping_pulls_newest_wins(tmp_path):
-    old = pd.DataFrame({"city": "colombo", "date": ["2026-09-01", "2026-09-02"], "rainfall_mm": [1.0, 2.0],
+    old = pd.DataFrame({"district": "colombo", "date": ["2026-09-01", "2026-09-02"], "rainfall_mm": [1.0, 2.0],
                         "temperature_2m_mean": 28.0, "temperature_2m_max": 31.0, "temperature_2m_min": 25.0,
                         "fetched_at": "2026-09-05T00:00:00Z"})
     new = old.assign(rainfall_mm=[1.5, 2.5], fetched_at="2026-09-10T00:00:00Z")

@@ -15,28 +15,34 @@ models:
               arguments:
                 values: ['NE monsoon', 'First inter-monsoon', 'SW monsoon', 'Second inter-monsoon']
 
-  - name: dim_city
-    description: City dimension with hash surrogate key and an 'unknown' member (-1).
+  - name: dim_district
+    description: District dimension (25 districts) with hash surrogate key and an 'unknown' member (-1).
     columns:
-      - name: city_sk
+      - name: district_sk
         data_tests: [unique, not_null]
-      - name: city
+      - name: district
         data_tests: [unique, not_null]
+      - name: province
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Western', 'Central', 'Southern', 'Northern', 'Eastern', 'North Western',
+                         'North Central', 'Uva', 'Sabaragamuwa', 'Unknown']
 
   - name: fact_weather_weekly
-    description: Weekly weather per city. Grain = city x epi week.
+    description: Weekly weather per district. Grain = district x epi week.
     data_tests:
       - unique_combination:
           arguments:
-            columns: [city_sk, epi_week_key]
+            columns: [district_sk, epi_week_key]
     columns:
-      - name: city_sk
+      - name: district_sk
         data_tests:
           - not_null
           - relationships:
               arguments:
-                to: ref('dim_city')
-                field: city_sk
+                to: ref('dim_district')
+                field: district_sk
           - not_unknown_member
       - name: epi_week_key
         data_tests:

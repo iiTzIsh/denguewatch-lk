@@ -47,7 +47,7 @@ def main() -> None:
 
     setup_logging()
     if args.fetch:
-        run_step("extract weather", py("src.extract.weather", "--start", args.start, "--end", args.end, "--city", "all"))
+        run_step("extract weather", py("src.extract.weather", "--start", args.start, "--end", args.end, "--district", "all"))
     run_step("load silver", py("src.load.duckdb_load"))
     run_step("scd2 regions", py("src.transform.scd2"))
     run_step("dbt build (gold models + tests)", [DBT_BIN, "build", *DBT_ARGS])
