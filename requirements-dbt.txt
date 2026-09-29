@@ -1,0 +1,5 @@
+# dbt lives in its own list: in the Airflow image it gets its own virtualenv
+# (dbt-core and Airflow pin different library versions - keeping them apart avoids conflicts)
+dbt-core==1.12.5
+dbt-duckdb==1.11.0
+duckdb==1.5.6

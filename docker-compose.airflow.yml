@@ -33,6 +33,7 @@ x-airflow-common:
     - ./infra/airflow/plugins:/opt/airflow/plugins
     - ./src:/opt/airflow/project/src
     - ./sql:/opt/airflow/project/sql
+    - ./dbt:/opt/airflow/project/dbt
     - ./reference:/opt/airflow/project/reference
     - ./data:/opt/airflow/project/data
     - ./logs:/opt/airflow/project/logs

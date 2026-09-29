@@ -1,0 +1,19 @@
+version: 2
+
+sources:
+  - name: silver
+    description: Tables loaded by the Python pipeline (src/load/duckdb_load.py)
+    schema: main
+    tables:
+      - name: weather_daily
+        description: One row per city per day (newest pull wins)
+      - name: weather_weekly
+        description: One row per city per Sat->Fri epi week
+      - name: dim_city
+        description: Reference list from reference/cities.csv
+
+  - name: scd2
+    description: SCD Type 2 table maintained incrementally by src/transform/scd2.py
+    schema: gold
+    tables:
+      - name: dim_region

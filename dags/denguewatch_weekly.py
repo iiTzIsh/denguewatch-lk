@@ -1,6 +1,6 @@
 """
 DAG: denguewatch_weekly
-Every Monday 07:00 (Sri Lanka time): pull weather -> silver -> SCD2 regions -> gold + data tests.
+Every Monday 07:00 (Sri Lanka time): pull weather -> silver -> SCD2 regions -> dbt build (gold + tests) -> dbt docs.
 
 Each task runs one of our existing modules (same commands you run by hand),
 so the pipeline code stays independent of Airflow.
@@ -14,6 +14,8 @@ from airflow.providers.standard.operators.bash import BashOperator
 from airflow.sdk import DAG
 
 PROJECT = "/opt/airflow/project"   # mounted by docker-compose.airflow.yml
+DBT = "/opt/airflow/dbt_venv/bin/dbt"
+DBT_ARGS = "--project-dir dbt --profiles-dir dbt"
 
 # Run date for this DAG run. Scheduled runs have a logical_date; manual runs may not -> use run_after.
 RUN_DATE = "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}"
@@ -27,7 +29,7 @@ default_args = {
 
 with DAG(
     dag_id="denguewatch_weekly",
-    description="Weather -> silver -> SCD2 -> gold star schema + data tests",
+    description="Weather -> silver -> SCD2 -> dbt gold star schema + tests",
     schedule="0 7 * * 1",                      # cron: minute 0, hour 7, every Monday
     start_date=pendulum.datetime(2026, 9, 1, tz="Asia/Colombo"),
     catchup=False,                             # don't auto-run all the missed past Mondays
@@ -47,11 +49,16 @@ with DAG(
         task_id="scd2_regions",
         bash_command=f"cd {PROJECT} && python -m src.transform.scd2",
     )
-    build_gold = BashOperator(
-        task_id="build_gold",
-        bash_command=f"cd {PROJECT} && python -m src.transform.build_gold",
+    dbt_build = BashOperator(
+        task_id="dbt_build",
+        # dbt lives in its own virtualenv in the image (see infra/airflow/Dockerfile)
+        bash_command=f"cd {PROJECT} && {DBT} build {DBT_ARGS}",
         retries=0,                             # data-test failure = real problem, retrying won't fix it
+    )
+    dbt_docs = BashOperator(
+        task_id="dbt_docs",
+        bash_command=f"cd {PROJECT} && {DBT} docs generate {DBT_ARGS}",
     )
 
     # dependencies: left runs before right
-    extract_weather >> load_silver >> scd2_regions >> build_gold
+    extract_weather >> load_silver >> scd2_regions >> dbt_build >> dbt_docs

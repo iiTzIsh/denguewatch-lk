@@ -19,5 +19,5 @@ def test_weekly_dag_task_order():
     bag = DagBag(dag_folder=str(Path(__file__).parents[1] / "dags"))
     dag = bag.dags["denguewatch_weekly"]  # read from parsed files, no DB needed
     assert [t.task_id for t in dag.topological_sort()] == [
-        "extract_weather", "load_silver", "scd2_regions", "build_gold"
+        "extract_weather", "load_silver", "scd2_regions", "dbt_build", "dbt_docs"
     ]

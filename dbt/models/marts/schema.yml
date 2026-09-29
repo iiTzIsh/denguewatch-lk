@@ -1,0 +1,55 @@
+version: 2
+
+models:
+  - name: dim_epi_week
+    description: Sri Lankan epidemiological weeks (Saturday -> Friday).
+    columns:
+      - name: epi_week_key
+        description: e.g. 2024-W18
+        data_tests: [unique, not_null]
+      - name: week_start
+        data_tests: [unique, not_null]
+      - name: season
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['NE monsoon', 'First inter-monsoon', 'SW monsoon', 'Second inter-monsoon']
+
+  - name: dim_city
+    description: City dimension with hash surrogate key and an 'unknown' member (-1).
+    columns:
+      - name: city_sk
+        data_tests: [unique, not_null]
+      - name: city
+        data_tests: [unique, not_null]
+
+  - name: fact_weather_weekly
+    description: Weekly weather per city. Grain = city x epi week.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [city_sk, epi_week_key]
+    columns:
+      - name: city_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_city')
+                field: city_sk
+          - not_unknown_member
+      - name: epi_week_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_epi_week')
+                field: epi_week_key
+      - name: rainfall_mm_total
+        data_tests:
+          - in_range:
+              arguments: {min_value: 0}
+      - name: days_in_week
+        data_tests:
+          - in_range:
+              arguments: {min_value: 1, max_value: 7}
