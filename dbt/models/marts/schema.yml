@@ -59,3 +59,63 @@ models:
         data_tests:
           - in_range:
               arguments: {min_value: 1, max_value: 7}
+
+  - name: dim_date
+    description: Daily calendar 2006-2027; bridge between epi weeks (Sat-Fri) and ISO weeks (Mon-Sun). See docs/decisions/0001.
+    columns:
+      - name: date_day
+        data_tests: [unique, not_null]
+      - name: epi_week_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_epi_week')
+                field: epi_week_key
+      - name: iso_week_key
+        data_tests: [not_null]
+
+  - name: fact_weather_iso_weekly
+    description: Weekly weather per district on ISO weeks (Mon-Sun). Grain = district x ISO week.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [district_sk, iso_week_key]
+    columns:
+      - name: district_sk
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_district')
+                field: district_sk
+      - name: days_in_week
+        data_tests:
+          - in_range:
+              arguments: {min_value: 1, max_value: 7}
+
+  - name: fact_dengue_ndcu_weekly
+    description: NDCU weekly cases per RDHS on ISO weeks, with restatement handling (cases_first_reported vs cases_latest).
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [rdhs, iso_week_key]
+    columns:
+      - name: district_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_district')
+                field: district_sk
+      - name: cases_latest
+        data_tests:
+          - not_null
+          - in_range:
+              arguments: {min_value: 0}
+
+  - name: mart_ndcu_monitoring
+    description: District x ISO week monitoring view - cases, change vs last week, weather and 1-4 week rainfall lags.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [district_sk, iso_week_key]
