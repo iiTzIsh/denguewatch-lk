@@ -5,13 +5,14 @@ Run (from project root):
     python -m src.extract.weather --start 2024-01-01 --end 2024-12-31
     python -m src.extract.weather --start 2024-01-01 --end 2024-12-31 --city kandy
     python -m src.extract.weather --start 2024-01-01 --end 2024-12-31 --city all
+    python -m src.extract.weather --as-of 2026-09-28 --days-back 35 --city all   (what Airflow runs)
 """
 from __future__ import annotations
 
 import argparse
 import logging
 import time
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,7 @@ CITIES: dict[str, tuple[float, float]] = {
     "kurunegala": (7.4863, 80.3647),
 }
 TIMEOUT_S = 30
+ARCHIVE_LAG_DAYS = 2  # don't ask for the last couple of days - archive data arrives with a delay
 PAUSE_BETWEEN_CALLS_S = 1.0  # be polite to the free API
 
 
@@ -107,6 +109,8 @@ def to_dataframe(payload: dict[str, Any]) -> pd.DataFrame:
     df["date"] = pd.to_datetime(df["date"]).dt.date
     df["latitude"] = payload.get("latitude")
     df["longitude"] = payload.get("longitude")
+    # lineage: WHEN we pulled it -> if two files overlap, the newest pull wins at load time
+    df["fetched_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     return df
 
 
@@ -153,6 +157,13 @@ def valid_date(text: str) -> str:
     return text
 
 
+def window_from_as_of(as_of: str, days_back: int) -> tuple[str, str]:
+    """(start, end) ending ARCHIVE_LAG_DAYS before as_of. Used by the scheduled Airflow run."""
+    end = date.fromisoformat(as_of) - timedelta(days=ARCHIVE_LAG_DAYS)
+    start = end - timedelta(days=days_back - 1)
+    return start.isoformat(), end.isoformat()
+
+
 def run_city(city: str, start: str, end: str, out_dir: Path) -> Path:
     """Fetch + convert + save for ONE city. Returns the CSV path."""
     lat, lon = CITIES[city]
@@ -164,13 +175,19 @@ def run_city(city: str, start: str, end: str, out_dir: Path) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Fetch Open-Meteo daily weather -> CSV")
-    parser.add_argument("--start", required=True, type=valid_date, help="YYYY-MM-DD")
-    parser.add_argument("--end", required=True, type=valid_date, help="YYYY-MM-DD")
+    parser.add_argument("--start", type=valid_date, help="YYYY-MM-DD")
+    parser.add_argument("--end", type=valid_date, help="YYYY-MM-DD")
+    parser.add_argument("--as-of", type=valid_date, help="YYYY-MM-DD run date (instead of --start/--end)")
+    parser.add_argument("--days-back", type=int, default=35, help="window size used with --as-of")
     parser.add_argument("--city", default="colombo", choices=[*CITIES, "all"])
     parser.add_argument("--out-dir", default=str(WEATHER_BRONZE_DIR))
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     args = parser.parse_args()
 
+    if args.as_of:
+        args.start, args.end = window_from_as_of(args.as_of, args.days_back)
+    elif not (args.start and args.end):
+        parser.error("give --start and --end, or --as-of")
     if args.start > args.end:  # 'YYYY-MM-DD' strings sort correctly as text
         parser.error("--start must be on or before --end")
 

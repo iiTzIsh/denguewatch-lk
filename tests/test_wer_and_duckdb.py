@@ -67,3 +67,15 @@ def test_orphan_cities_detected(tmp_path):
     load_reference(con)
     load_weather(con, str(tmp_path / "*_daily_*.csv"))
     assert orphan_cities(con) == ["atlantis"]
+
+
+def test_overlapping_pulls_newest_wins(tmp_path):
+    old = pd.DataFrame({"city": "colombo", "date": ["2026-09-01", "2026-09-02"], "rainfall_mm": [1.0, 2.0],
+                        "temperature_2m_mean": 28.0, "temperature_2m_max": 31.0, "temperature_2m_min": 25.0,
+                        "fetched_at": "2026-09-05T00:00:00Z"})
+    new = old.assign(rainfall_mm=[1.5, 2.5], fetched_at="2026-09-10T00:00:00Z")
+    old.to_csv(tmp_path / "colombo_daily_a.csv", index=False)
+    new.to_csv(tmp_path / "colombo_daily_b.csv", index=False)
+    con = duckdb.connect()
+    assert load_weather(con, str(tmp_path / "*_daily_*.csv")) == 2     # not 4
+    assert con.sql("SELECT sum(rainfall_mm) FROM weather_daily").fetchone()[0] == 4.0  # newest values

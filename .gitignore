@@ -7,3 +7,5 @@ data/
 logs/
 scratch/
 .env
+infra/airflow/logs/
+infra/airflow/config/airflow.cfg

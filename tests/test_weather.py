@@ -122,3 +122,8 @@ def test_real_api_colombo_one_week():
     payload = weather.fetch_daily_weather(6.9271, 79.8612, "2024-05-01", "2024-05-07")
     df = weather.validate_weather(weather.to_dataframe(payload))
     assert len(df) == 7
+
+
+# ---------- Week 3: --as-of window ----------
+def test_window_from_as_of():
+    assert weather.window_from_as_of("2026-09-28", 35) == ("2026-08-23", "2026-09-26")

@@ -46,21 +46,33 @@ def load_weather(con: duckdb.DuckDBPyConnection, csv_glob: str) -> int:
     """
     Load every matching CSV into weather_daily.
     Idempotent: CREATE OR REPLACE rebuilds the table, so re-running never duplicates rows.
-    DISTINCT drops exact duplicate rows if two files overlap (e.g. 2024 + Jan-2024 pulls).
+    Overlapping files (weekly Airflow pulls overlap on purpose) -> newest fetched_at wins per city+day.
     """
     con.execute(
-        """
+        "CREATE OR REPLACE TEMP TABLE raw_weather AS "
+        "SELECT * FROM read_csv_auto(?, union_by_name = true, filename = true)",
+        [csv_glob],
+    )
+    cols = {r[0] for r in con.execute("DESCRIBE raw_weather").fetchall()}
+    # older files were saved before we added fetched_at -> treat as "oldest"
+    fetched = "fetched_at" if "fetched_at" in cols else "CAST(NULL AS VARCHAR)"
+    con.execute(
+        f"""
         CREATE OR REPLACE TABLE weather_daily AS
-        SELECT DISTINCT
+        SELECT
             city,
             CAST(date AS DATE)          AS date,
             rainfall_mm,
             temperature_2m_mean         AS temp_mean_c,
             temperature_2m_max          AS temp_max_c,
             temperature_2m_min          AS temp_min_c
-        FROM read_csv_auto(?, union_by_name = true)
-        """,
-        [csv_glob],
+        FROM raw_weather
+        -- keep ONE row per city + day: the newest fetch wins
+        QUALIFY ROW_NUMBER() OVER (
+            PARTITION BY city, CAST(date AS DATE)
+            ORDER BY {fetched} DESC NULLS LAST, filename DESC
+        ) = 1
+        """
     )
     row = con.execute("SELECT COUNT(*) FROM weather_daily").fetchone()
     n = row[0] if row else 0
