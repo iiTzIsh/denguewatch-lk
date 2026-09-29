@@ -31,10 +31,11 @@ OUT_DIR = PARSED_DIR / "ndcu_weekly"
 BAD_DIR = QUARANTINE_DIR / "ndcu"
 RDHS = pd.read_csv(REFERENCE_DIR / "rdhs.csv")
 
-VAL = r"(\d+\*?|Nil|Ni)"                    # a cell: number, number with * (revised), 'Nil' (or 'Ni': text-layer glitch)
+# a cell: number, number with * (revised), 'Nil' (or 'Ni': text-layer glitch)
+VAL = r"(\d+\*?|Nil|Ni)"
 ROW_RE = {
     str(code): re.compile(rf"\b{re.escape(str(name))}\*?\s+" + r"\s+".join([VAL] * 6) + r"(?:\s|$)")
-    for code, name in zip(RDHS["rdhs"], RDHS["rdhs_name"])
+    for code, name in zip(RDHS["rdhs"], RDHS["rdhs_name"], strict=True)
 }
 TOTAL_RE = re.compile(r"\bTotal\*?\s+((?:(?:\d+\*?|Nil)\s*){5,6})")   # 6 numbers, sometimes only 5
 YEAR_WEEK_RE = re.compile(r"Year:\s*(\d{4}).*?Issue:\s*(\d{1,2})", re.DOTALL)
@@ -77,7 +78,7 @@ def parse_text(text: str) -> pd.DataFrame:
         if not found:
             raise NDCUParseError(f"Region not found: {rdhs}")
         cells = found.groups()
-        rows.append({"rdhs": rdhs, **{c: to_int(v) for c, v in zip(COLUMNS, cells)},
+        rows.append({"rdhs": rdhs, **{c: to_int(v) for c, v in zip(COLUMNS, cells, strict=True)},
                      "has_revised_value": any(v.endswith("*") for v in cells)})
     df = pd.DataFrame(rows)
 

@@ -120,7 +120,7 @@ def main() -> None:
         html = get_page_cached(session, WER_PAGE, BRONZE_DIR / f"index_{date.today():%Y%m%d}.html", args.refresh)
     except requests.RequestException as exc:
         logger.error("Could not download %s: %s", WER_PAGE, exc)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc
     links = extract_pdf_links(html)
     out = BRONZE_DIR / "pdf_links.csv"
     links.to_csv(out, index=False)

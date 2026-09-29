@@ -54,7 +54,7 @@ def load_districts(path: Path = DISTRICTS_CSV) -> dict[str, tuple[float, float]]
     ref = pd.read_csv(path)
     return {
         str(d): (float(lat), float(lon))
-        for d, lat, lon in zip(ref["district"], ref["latitude"], ref["longitude"])
+        for d, lat, lon in zip(ref["district"], ref["latitude"], ref["longitude"], strict=True)
     }
 
 
@@ -173,8 +173,8 @@ def valid_date(text: str) -> str:
     """argparse 'type' function: reject bad dates BEFORE calling the API (fail fast)."""
     try:
         date.fromisoformat(text)
-    except ValueError:
-        raise argparse.ArgumentTypeError(f"'{text}' is not a valid date (use YYYY-MM-DD)")
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"'{text}' is not a valid date (use YYYY-MM-DD)") from exc
     return text
 
 
@@ -227,7 +227,7 @@ def main() -> None:
             run_district(district, args.start, args.end, Path(args.out_dir))
         except RateLimitError:
             logger.error("Rate limit hit at %s - stopping. Re-run later.", district)
-            raise SystemExit(3)
+            raise SystemExit(3) from None
         except WeatherAPIError:
             logger.exception("Failed for %s - continuing with the rest", district)
             failed.append(district)

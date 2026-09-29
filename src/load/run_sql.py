@@ -14,7 +14,6 @@ import duckdb
 from src.config import DB_PATH
 
 
-
 def split_queries(sql_text: str) -> list[str]:
     """Split on ';' and drop empty / comment-only chunks."""
     queries = []

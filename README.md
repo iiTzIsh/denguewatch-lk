@@ -1,5 +1,7 @@
 # DengueWatch LK 🦟
 
+[![CI](https://github.com/iiTzIsh/denguewatch-lk/actions/workflows/ci.yml/badge.svg)](https://github.com/iiTzIsh/denguewatch-lk/actions/workflows/ci.yml)
+
 **Automated dengue outbreak early-warning pipeline for Sri Lanka** — ingests weather and dengue surveillance data weekly, models it into a tested star schema, and (in progress) forecasts district-level outbreak risk 2–4 weeks ahead.
 
 > ⚠️ **Disclaimer:** This is a portfolio project, **not official health advice**. For official dengue information see the [National Dengue Control Unit](https://www.dengue.health.gov.lk/).
@@ -34,7 +36,7 @@ NDCU website          ─┘    retries · logging ·          ↓  load + valid
 | **SCD Type 2** | Region dimension built from dated reference snapshots (hash change detection, point-in-time joins, idempotent, out-of-order guard) — *currently demo data* |
 | **Gold (dbt)** | `dbt-duckdb` staging + marts, **21 data tests** (unique, not_null, relationships, accepted values, ranges, grain, reconciliation vs silver) + docs |
 | **Orchestration** | **Airflow 3.3.2** (LocalExecutor, Docker Compose): weekly DAG `extract → silver → SCD2 → dbt build → dbt docs`; separate WER DAG so a flaky government site doesn't block the pipeline |
-| **Quality** | pytest suite (unit, parametrized, fixtures, DAG integrity), mypy clean, config via environment variables |
+| **Quality** | GitHub Actions CI on every push: ruff + mypy + pytest, the **full pipeline + dbt build on sample data**, and Airflow DAG integrity; real-PDF regression tests; config via environment variables |
 
 ## Run it
 **Local (Python 3.11+):**

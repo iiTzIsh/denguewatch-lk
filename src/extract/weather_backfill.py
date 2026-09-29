@@ -17,8 +17,13 @@ from datetime import date, timedelta
 
 from src.config import WEATHER_BRONZE_DIR
 from src.extract.weather import (
-    ARCHIVE_LAG_DAYS, DISTRICTS, PAUSE_BETWEEN_CALLS_S, RateLimitError, WeatherAPIError,
-    output_path, run_district,
+    ARCHIVE_LAG_DAYS,
+    DISTRICTS,
+    PAUSE_BETWEEN_CALLS_S,
+    RateLimitError,
+    WeatherAPIError,
+    output_path,
+    run_district,
 )
 from src.log_setup import setup_logging
 
@@ -62,7 +67,7 @@ def main() -> None:
             run_district(district, start, end, WEATHER_BRONZE_DIR)
         except RateLimitError:
             logger.error("Daily limit reached after %d chunks. Re-run this command later to resume.", i - 1)
-            raise SystemExit(3)
+            raise SystemExit(3) from None
         except WeatherAPIError:
             logger.exception("Chunk failed: %s %s..%s (will retry on next run)", district, start, end)
             failed.append((district, start))

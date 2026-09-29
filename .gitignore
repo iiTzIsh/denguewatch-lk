@@ -11,3 +11,5 @@ infra/airflow/logs/
 infra/airflow/config/airflow.cfg
 .mypy_cache/
 .coverage
+ci_data/
+ci_logs/

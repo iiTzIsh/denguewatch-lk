@@ -1,0 +1,5 @@
+# tools for developing + CI (not needed to RUN the pipeline)
+ruff==0.15.11
+mypy>=1.10
+types-requests
+pandas-stubs

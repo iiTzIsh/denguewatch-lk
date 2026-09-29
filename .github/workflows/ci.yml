@@ -1,0 +1,65 @@
+# Runs on every push to main and every pull request.
+# 3 jobs: code quality + unit tests -> full pipeline on sample data  |  Airflow DAG integrity
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    name: Lint + type check + unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Lint (ruff)
+        run: ruff check .
+      - name: Type check (mypy)
+        run: mypy src
+      - name: Unit tests (pytest)
+        run: pytest -v
+
+  pipeline:
+    name: Pipeline + dbt build on sample data
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    env:
+      DW_DATA_DIR: ${{ github.workspace }}/ci_data
+      DW_LOG_DIR: ${{ github.workspace }}/ci_logs
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: pip install -r requirements.txt -r requirements-dbt.txt
+      - name: Build sample bronze data
+        run: python -m tests.ci.make_sample_data
+      - name: Run pipeline (parse -> silver -> SCD2 -> dbt build with all data tests)
+        run: python -m src.pipeline
+
+  dags:
+    name: Airflow DAG integrity
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Airflow 3.3.2 (official constraints) + project packages
+        run: |
+          pip install "apache-airflow==3.3.2" \
+            --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.12.txt"
+          pip install "apache-airflow==3.3.2" -r requirements.txt
+      - name: DAG tests
+        run: pytest tests/test_dags.py -v
