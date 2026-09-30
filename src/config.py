@@ -56,3 +56,8 @@ ALERTS_DIR = DATA_DIR / "alerts"                               # remembers which
 
 REFERENCE_DIR = PROJECT_ROOT / "reference"   # small files, versioned in git
 SQL_DIR = PROJECT_ROOT / "sql"
+
+# ---- ML ----
+# MLflow tracking server (docker compose up -d mlflow). Override with MLFLOW_TRACKING_URI (e.g. Databricks later).
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
+MLFLOW_EXPERIMENT = os.getenv("DW_MLFLOW_EXPERIMENT", "denguewatch-forecast")

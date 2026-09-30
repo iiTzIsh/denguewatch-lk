@@ -1,6 +1,7 @@
 # Pipeline (one-off):  docker compose run --rm pipeline
 # Dashboard:           docker compose up -d dashboard   ->  http://localhost:8501
 # API:                 docker compose up -d api         ->  http://localhost:8000/docs
+# MLflow:              docker compose up -d mlflow      ->  http://localhost:5000
 services:
   pipeline:
     build: .                      # build the image from ./Dockerfile
@@ -31,3 +32,21 @@ services:
       - ./data:/app/data:ro             # read-only
     environment:
       DW_DATA_DIR: /app/data
+
+  mlflow:
+    # Experiment tracking + model registry. Runs/params/metrics -> SQLite, model files -> ./mlflow/artifacts.
+    # Clients only talk HTTP to this server (it proxies artifact uploads), so they never need the folder.
+    image: ghcr.io/mlflow/mlflow:v3.16.1
+    command: >
+      mlflow server
+      --host 0.0.0.0 --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --artifacts-destination /mlflow/artifacts
+      --allowed-hosts localhost,localhost:5000,127.0.0.1:5000,mlflow,mlflow:5000
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlflow:/mlflow
+    environment:
+      MLFLOW_DISABLE_TELEMETRY: "true"
+    restart: unless-stopped

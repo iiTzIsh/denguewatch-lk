@@ -7,6 +7,9 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  DO_NOT_TRACK: "true"          # no MLflow usage telemetry from CI
+
 jobs:
   lint-and-test:
     name: Lint + type check + unit tests
@@ -18,7 +21,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install
-        run: pip install -r requirements.txt -r requirements-dev.txt
+        run: pip install -r requirements.txt -r requirements-dev.txt -r requirements-api.txt -r requirements-ml.txt
       - name: Lint (ruff)
         run: ruff check .
       - name: Type check (mypy)

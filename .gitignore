@@ -5,11 +5,7 @@ __pycache__/
 data/
 *.duckdb
 logs/
-scratch/
 .env
-infra/airflow/logs/
-infra/airflow/config/airflow.cfg
-.mypy_cache/
-.coverage
-ci_data/
-ci_logs/
+mlflow/
+mlruns/
+mlartifacts/
