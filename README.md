@@ -94,8 +94,9 @@ docs/            data model, source notes, design decisions
 |---|---|---|
 | [Open-Meteo](https://open-meteo.com/) | Daily rainfall & temperature (ERA5-Land) | Free archive API, no key · CC BY 4.0 |
 | [geoBoundaries](https://github.com/wmgeolab/geoBoundaries) | District boundaries → centroids | gbOpen LKA ADM2, from OpenStreetMap · ODbL 1.0 |
-| [Epidemiology Unit – WER](https://www.epid.gov.lk/weekly-epidemiological-report) | Weekly dengue history (PDF) | Listing covers 2006–2024; site intermittently returns HTTP 500 |
-| [NDCU](https://www.dengue.health.gov.lk/) | Recent MOH-level cases | Planned |
+| [Epidemiology Unit – WER](https://www.epid.gov.lk/weekly-epidemiological-report) | Original WER PDFs | Our scraper is ready; site returning HTTP 500 since 28 Sep 2026 |
+| [NDCU](https://www.dengue.health.gov.lk/) | Weekly cases per RDHS (2026) | Weekly update PDFs, parsed + validated |
+| [denguedatahub](https://github.com/thiyangt/denguedatahub) (Talagala) | **Weekly dengue history 2007–2026** per RDHS, from the Epidemiology Unit's WER | R package data, GPL-3, pinned commit; cross-checked against NDCU (ADR 0002) |
 
 ## Roadmap
 - [x] Phase 0 – Foundations: tested extractors, DuckDB, Docker, Airflow, dbt

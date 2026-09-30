@@ -48,6 +48,7 @@ WEATHER_BRONZE_DIR = BRONZE_DIR / "weather_district" / WEATHER_MODEL
 WER_BRONZE_DIR = BRONZE_DIR / "wer"
 
 NDCU_BRONZE_DIR = BRONZE_DIR / "ndcu" / "weekly"             # raw weekly update PDFs
+WER_HISTORY_BRONZE_DIR = BRONZE_DIR / "wer_history"            # denguedatahub .rda (WER-derived history)
 PARSED_DIR = DATA_DIR / "parsed"                               # tables extracted from PDFs (-> silver)
 QUARANTINE_DIR = DATA_DIR / "quarantine"                       # files that failed parsing/validation
 

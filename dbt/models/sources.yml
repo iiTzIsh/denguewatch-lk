@@ -15,6 +15,10 @@ sources:
         description: 26 RDHS regions (25 districts, Ampara split into Ampara + Kalmunai) -> district
       - name: ndcu_weekly_cases
         description: Parsed NDCU weekly update PDFs. ISO weeks (Monday -> Sunday), one row per RDHS per week.
+      - name: wer_weekly_cases
+        description: >
+          WER dengue history 2007->2026 per RDHS, from the denguedatahub R package (pinned commit), itself extracted
+          from the Epidemiology Unit's Weekly Epidemiological Reports. Sat->Fri epi weeks up to 2025; Mon->Sun in 2026.
 
   - name: scd2
     description: SCD Type 2 table maintained incrementally by src/transform/scd2.py

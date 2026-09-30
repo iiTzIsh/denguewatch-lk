@@ -23,3 +23,27 @@ models:
           - not_null
           - in_range:
               arguments: {min_value: 0}
+
+  - name: stg_wer_weekly
+    description: WER dengue history per RDHS per reported week (denguedatahub, pinned).
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [week_start, rdhs]
+    columns:
+      - name: district
+        data_tests: [not_null]
+      - name: cases
+        data_tests:
+          - not_null
+          - in_range:
+              arguments: {min_value: 0}
+      - name: week_days
+        description: Days in the reported week. Normally 7; the source has a few irregular 2009 weeks (5-8 days).
+        data_tests:
+          - in_range:
+              arguments: {min_value: 5, max_value: 8}
+          - in_range:
+              name: wer_week_is_not_7_days
+              arguments: {min_value: 7, max_value: 7}
+              config: {severity: warn}

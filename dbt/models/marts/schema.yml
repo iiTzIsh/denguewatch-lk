@@ -119,3 +119,18 @@ models:
       - unique_combination:
           arguments:
             columns: [district_sk, iso_week_key]
+
+  - name: fact_dengue_wer_weekly
+    description: WER dengue history (2007->2026) per RDHS per reported week - training data for the forecasting model.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [rdhs, week_start]
+    columns:
+      - name: district_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_district')
+                field: district_sk

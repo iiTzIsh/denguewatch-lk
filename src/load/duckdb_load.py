@@ -3,7 +3,7 @@ Silver load: ALL district weather CSVs -> DuckDB + a weekly table (Sat->Fri epi 
 
 Run:  python -m src.load.duckdb_load
 Out:  data/denguewatch.duckdb  with tables  dim_district, dim_rdhs, weather_daily, weather_weekly,
-      ndcu_weekly_cases
+      ndcu_weekly_cases, wer_weekly_cases
 """
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ WEATHER_GLOB = str(WEATHER_BRONZE_DIR / "*_daily_*.csv")
 DISTRICTS_CSV = str(REFERENCE_DIR / "districts.csv")
 RDHS_CSV = str(REFERENCE_DIR / "rdhs.csv")
 NDCU_GLOB = str(PARSED_DIR / "ndcu_weekly" / "*.csv")
+WER_GLOB = str(PARSED_DIR / "wer_history" / "*.csv")
 
 
 def load_reference(con: duckdb.DuckDBPyConnection, csv_path: str = DISTRICTS_CSV) -> int:
@@ -153,6 +154,36 @@ def load_ndcu(con: duckdb.DuckDBPyConnection, csv_glob: str = NDCU_GLOB) -> int:
     return n
 
 
+WER_DDL = """
+CREATE OR REPLACE TABLE wer_weekly_cases (
+    year INTEGER, week INTEGER, week_start DATE, week_end DATE, rdhs VARCHAR, cases INTEGER,
+    week_days INTEGER, week_start_day VARCHAR, source VARCHAR, loaded_at VARCHAR
+)
+"""
+
+
+def load_wer_history(con: duckdb.DuckDBPyConnection, csv_glob: str = WER_GLOB) -> int:
+    """WER history -> silver. Always exists (empty if not downloaded yet). If several versions were
+    parsed, the newest load wins per week + region."""
+    con.execute(WER_DDL)
+    if not list(Path(csv_glob).parent.glob(Path(csv_glob).name)):
+        logger.info("wer_weekly_cases: 0 rows (run python -m src.extract.wer_history)")
+        return 0
+    con.execute(
+        """
+        INSERT INTO wer_weekly_cases
+        SELECT year, week, week_start, week_end, rdhs, cases, week_days, week_start_day, source, loaded_at
+        FROM read_csv(?, header = true, union_by_name = true)
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY week_start, rdhs ORDER BY loaded_at DESC) = 1
+        """,
+        [csv_glob],
+    )
+    row = con.execute("SELECT COUNT(*) FROM wer_weekly_cases").fetchone()
+    n = row[0] if row else 0
+    logger.info("wer_weekly_cases: %d rows", n)
+    return n
+
+
 def main() -> None:
     setup_logging()
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -161,6 +192,7 @@ def main() -> None:
         load_weather(con, WEATHER_GLOB)
         build_weekly(con)
         load_ndcu(con)
+        load_wer_history(con)
         orphans = orphan_districts(con)
         if orphans:
             raise SystemExit(f"Weather districts missing from {DISTRICTS_CSV}: {orphans}")
