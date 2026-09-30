@@ -20,6 +20,13 @@ sources:
           WER dengue history 2007->2026 per RDHS, from the denguedatahub R package (pinned commit), itself extracted
           from the Epidemiology Unit's Weekly Epidemiological Reports. Sat->Fri epi weeks up to 2025; Mon->Sun in 2026.
 
+  - name: ml
+    description: Written by the ML jobs (created empty by the silver load, so dbt always finds it)
+    schema: ml
+    tables:
+      - name: forecast_weekly
+        description: Every batch of forecasts (src.ml.predict = live @champion, src.ml.replay = as-of replay)
+
   - name: scd2
     description: SCD Type 2 table maintained incrementally by src/transform/scd2.py
     schema: gold

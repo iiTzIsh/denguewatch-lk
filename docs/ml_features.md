@@ -93,3 +93,26 @@ backtest (2014–2025) → fit on all weeks → log pyfunc to MLflow → registe
 - **Data gate.** Training refuses to run with fewer than 10,000 labelled rows (e.g. a half-built warehouse). It exits with code 2.
 - **Schedule.** Airflow `retrain_monthly` runs at 09:00 on the 1st of each month in its own ML virtualenv.
 - **Load the champion:** `mlflow.pyfunc.load_model("models:/denguewatch-forecaster@champion")`
+
+## Monitoring (`src/ml/monitor.py`, `src/ml/replay.py`, `gold.mart_forecast_accuracy`)
+
+**1. Forecast vs actual.** Every forecast is stored, and once its target week has happened, dbt joins it to the actual cases. The dashboard, `GET /model/health` and the table `gold.mart_forecast_accuracy` show the error next to the naive forecast. *Is the model still better than "same as this week"?*
+
+To start with real history instead of waiting months, `python -m src.ml.replay` rebuilds the last 16 weeks **as-of**: each week's model is trained only on data available at that time (no hindsight). Results for Jun–Sep 2026:
+
+| As-of replay 2026 | Forecasts | MAE | Naive MAE | Skill | Alerts correct | Outbreak weeks caught |
+|---|---|---|---|---|---|---|
+| 2 weeks ahead | 364 | 48.6 | 67.6 | **+28%** | 105/146 (72%) | 105/139 (76%) |
+| 4 weeks ahead | 312 | 63.6 | 120.8 | **+47%** | 79/123 (64%) | 79/120 (66%) |
+
+The stale forecast made from mid-May data (before the NDCU feed was added) shows up here too: 8 outbreak weeks missed. This is the kind of problem monitoring exists to expose.
+
+**2. Data drift (Evidently).** Every week, the last 8 weeks of model inputs are compared with the **same months in the previous 5 years**, because dengue and weather are seasonal. Each feature is tested with the normalised Wasserstein distance (drifted if ≥ 0.3).
+
+Evidently's default setting (0.1) flagged 22/22 features even in a normal year, so the alarm is **calibrated on history** (`python -m src.ml.monitor --calibrate`):
+
+| Year (mid-Sep check) | 2014 | 2015 | 2016 | **2017** | 2018 | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | **2026** |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Share of features drifted | .32 | .32 | .55 | **.64** | .59 | .23 | .36 | .50 | .45 | .50 | .36 | .50 | **.73** |
+
+Alarm at **≥ 0.60** (≈ 90th percentile). Only the two epidemic years reach it. When it fires, the weekly DAG triggers `retrain_monthly`. The champion/challenger gate then decides whether the retrained model replaces the current one, so drift never pushes a worse model into production. Each check writes a row to `ml.drift_runs` and an HTML report to `data/reports/drift/`.

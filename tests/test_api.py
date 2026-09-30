@@ -79,3 +79,8 @@ def test_forecast_endpoint(client, tmp_path):
     assert body["model_version"] == "7" and body["based_on_week_ending"] == "2026-05-17"
     region = body["regions"][0]
     assert region["risk_2w"] == "high" and region["risk_4w"] == "unknown" and region["outbreak_level_4w"] is None
+
+
+def test_model_health_empty(client):
+    body = client.get("/model/health").json()
+    assert body == {"performance": [], "drift": None}

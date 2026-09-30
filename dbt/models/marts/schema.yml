@@ -176,3 +176,26 @@ models:
           - not_null
           - in_range:
               arguments: {min_value: 1, max_value: 12}
+
+  - name: mart_forecast_accuracy
+    description: Forecast vs actual per region, horizon and model version, next to the naive forecast (model health).
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [rdhs, model_version, horizon_weeks, base_week_end]
+    columns:
+      - name: horizon_weeks
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [2, 4]
+      - name: abs_error
+        data_tests:
+          - not_null
+          - in_range:
+              arguments: {min_value: 0}
+      - name: risk_level
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['high', 'watch', 'normal', 'unknown']

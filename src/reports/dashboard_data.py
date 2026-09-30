@@ -105,3 +105,60 @@ def latest_forecast(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         return con.execute(FORECAST_SQL).df()
     except duckdb.CatalogException:        # ml.forecast_latest not created yet (python -m src.ml.predict)
         return pd.DataFrame()
+
+
+# ---------------- model health (forecast vs actual + data drift) ----------------
+PERFORMANCE_SQL = """
+SELECT
+    model_name, horizon_weeks,
+    count(*)                                               AS forecasts,
+    min(target_week_end)                                   AS first_target_week,
+    max(target_week_end)                                   AS last_target_week,
+    avg(abs_error)                                         AS mae,
+    avg(naive_abs_error)                                   AS naive_mae,
+    1 - avg(abs_error) / nullif(avg(naive_abs_error), 0)   AS skill_vs_naive,
+    count(*) FILTER (WHERE outbreak_happened)              AS outbreak_weeks,
+    count(*) FILTER (WHERE alerted)                        AS alerts,
+    count(*) FILTER (WHERE alerted AND outbreak_happened)  AS correct_alerts
+FROM gold.mart_forecast_accuracy
+GROUP BY ALL
+ORDER BY model_name, horizon_weeks
+"""
+
+
+def model_performance(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """Forecast vs actual per model and horizon. Empty until forecasts have matured."""
+    try:
+        return con.execute(PERFORMANCE_SQL).df()
+    except duckdb.CatalogException:
+        return pd.DataFrame()
+
+
+def forecast_vs_actual(con: duckdb.DuckDBPyConnection, horizon: int = 4) -> pd.DataFrame:
+    """National totals per target week: actual, model forecast, naive. One forecast per region and
+    target week (the live champion if it exists, otherwise the as-of replay)."""
+    try:
+        return con.execute(
+            """
+            WITH one AS (
+                SELECT * FROM gold.mart_forecast_accuracy
+                WHERE horizon_weeks = ?
+                QUALIFY row_number() OVER (PARTITION BY rdhs, target_week_end
+                                           ORDER BY model_name = 'asof-replay', scored_at DESC) = 1
+            )
+            SELECT target_week_end, sum(actual_cases) AS actual, sum(pred_cases) AS forecast,
+                   sum(naive_pred_cases) AS naive, count(*) AS regions
+            FROM one GROUP BY 1 ORDER BY 1
+            """,
+            [horizon],
+        ).df()
+    except duckdb.CatalogException:
+        return pd.DataFrame()
+
+
+def latest_drift(con: duckdb.DuckDBPyConnection) -> dict | None:
+    try:
+        df = con.execute("SELECT * FROM ml.drift_runs ORDER BY checked_at DESC LIMIT 1").df()
+    except duckdb.CatalogException:
+        return None
+    return None if df.empty else {str(k): v for k, v in df.iloc[0].to_dict().items()}

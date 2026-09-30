@@ -14,6 +14,8 @@ import duckdb
 
 from src.config import DB_PATH, PARSED_DIR, REFERENCE_DIR, WEATHER_BRONZE_DIR
 from src.log_setup import setup_logging
+from src.ml.monitor import DDL as DRIFT_DDL
+from src.ml.predict import DDL as FORECAST_DDL
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +195,9 @@ def main() -> None:
         build_weekly(con)
         load_ndcu(con)
         load_wer_history(con)
+        # empty ML tables so dbt sources + dashboard queries always exist (filled by src.ml.predict / monitor)
+        con.execute(FORECAST_DDL)
+        con.execute(DRIFT_DDL)
         orphans = orphan_districts(con)
         if orphans:
             raise SystemExit(f"Weather districts missing from {DISTRICTS_CSV}: {orphans}")

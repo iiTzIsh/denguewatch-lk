@@ -2,6 +2,8 @@
 DAG: denguewatch_weekly
 Every Monday 07:00 (Sri Lanka time): weather -> silver -> SCD2 -> dbt build (gold + tests)
 -> batch forecasts with the @champion model (MLflow) -> Telegram alert;  dbt docs in parallel.
+After the forecasts: data-drift check (Evidently) -> if drift is detected, trigger retrain_monthly now
+(champion/challenger still decides whether the retrained model replaces the current one).
 
 Each task runs one of our existing modules (same commands you run by hand),
 so the pipeline code stays independent of Airflow.
@@ -12,6 +14,8 @@ from datetime import timedelta
 
 import pendulum
 from airflow.providers.standard.operators.bash import BashOperator
+from airflow.providers.standard.operators.python import ShortCircuitOperator
+from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import DAG
 
 PROJECT = "/opt/airflow/project"   # mounted by docker-compose.airflow.yml
@@ -21,6 +25,14 @@ ML_PY = "/opt/airflow/ml_venv/bin/python"
 
 # Run date for this DAG run. Scheduled runs have a logical_date; manual runs may not -> use run_after.
 RUN_DATE = "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}"
+
+
+
+def _drift_detected() -> bool:
+    """True -> continue to the retrain trigger; False -> skip it. Imported lazily (only at run time)."""
+    from src.ml.monitor import latest_drift_detected
+    return latest_drift_detected()
+
 
 default_args = {
     "owner": "ishara",
@@ -74,6 +86,22 @@ with DAG(
         bash_command=f"cd {PROJECT} && python -m src.alerts.telegram",
     )
 
+    monitor_drift = BashOperator(
+        task_id="monitor_drift",
+        bash_command=f"cd {PROJECT} && {ML_PY} -m src.ml.monitor",
+    )
+    drift_gate = ShortCircuitOperator(
+        task_id="drift_detected",
+        python_callable=_drift_detected,
+        ignore_downstream_trigger_rules=True,
+    )
+    retrain = TriggerDagRunOperator(
+        task_id="trigger_retrain",
+        trigger_dag_id="retrain_monthly",
+        skip_when_already_exists=True,
+    )
+
     # dependencies: left runs before right; docs and forecasts both wait for a GREEN dbt build
     extract_weather >> load_silver >> scd2_regions >> dbt_build >> [dbt_docs, predict]
     predict >> send_alert
+    predict >> monitor_drift >> drift_gate >> retrain

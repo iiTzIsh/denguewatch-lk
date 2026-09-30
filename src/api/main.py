@@ -9,11 +9,13 @@ Endpoints:
   GET /districts                       the 25 districts
   GET /districts/{district}/trend      weekly cases (+ rainfall) for one district
   GET /forecast?top=5                  2- and 4-week case forecasts per region with risk level (@champion model)
+  GET /model/health                    forecast vs actual (vs naive) per model + latest data-drift check
 """
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated
 
 import duckdb
@@ -89,6 +91,35 @@ class ForecastResponse(BaseModel):
     risk_levels: str = ("high: forecast >= outbreak level | watch: >= 80% of it | normal | "
                         "unknown: not enough history. Outbreak level = usual level for that region and time of year.")
     disclaimer: str = DISCLAIMER
+
+
+class ModelPerformance(BaseModel):
+    model_name: str
+    horizon_weeks: int
+    forecasts: int
+    first_target_week: date
+    last_target_week: date
+    mae: float
+    naive_mae: float
+    skill_vs_naive: float | None
+    outbreak_weeks: int
+    alerts: int
+    correct_alerts: int
+
+
+class DriftStatus(BaseModel):
+    base_week_end: date
+    drift_detected: bool
+    n_drifted: int
+    n_features: int
+    drift_share: float
+    drifted_features: list[str]
+    checked_at: datetime
+
+
+class ModelHealth(BaseModel):
+    performance: list[ModelPerformance]
+    drift: DriftStatus | None
 
 
 # ---------- one read-only connection per request ----------
@@ -187,3 +218,20 @@ def forecast(con: Con, top: Annotated[int, Query(ge=1, le=26)] = 26) -> Forecast
     ]
     return ForecastResponse(model_version=str(df["model_version"].iloc[0]),
                             based_on_week_ending=df["base_week_end"].iloc[0], regions=regions)
+
+
+@app.get("/model/health", response_model=ModelHealth)
+def model_health(con: Con) -> ModelHealth:
+    perf = dd.model_performance(con)
+    d = dd.latest_drift(con)
+    drift = None
+    if d:
+        drift = DriftStatus(base_week_end=d["base_week_end"], drift_detected=bool(d["drift_detected"]),
+                            n_drifted=int(d["n_drifted"]), n_features=int(d["n_features"]),
+                            drift_share=float(d["drift_share"]), drifted_features=json.loads(d["drifted_features"]),
+                            checked_at=d["checked_at"])
+    return ModelHealth(
+        performance=[ModelPerformance(**{**r, "skill_vs_naive": _none_if_nan(r["skill_vs_naive"])})
+                     for r in ({str(k): v for k, v in rec.items()} for rec in perf.to_dict("records"))],
+        drift=drift,
+    )

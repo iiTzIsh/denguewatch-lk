@@ -32,3 +32,13 @@ def test_retrain_uses_ml_venv_and_runs_monthly():
     task = dag.get_task("train_and_promote")
     assert "/opt/airflow/ml_venv/bin/python -m src.ml.train" in task.bash_command
     assert dag.max_active_runs == 1
+
+
+def test_drift_triggers_retrain():
+    bag = DagBag(dag_folder=str(Path(__file__).parents[1] / "dags"))
+    dag = bag.dags["denguewatch_weekly"]
+    assert dag.get_task("monitor_drift").upstream_task_ids == {"predict_forecasts"}
+    assert dag.get_task("drift_detected").upstream_task_ids == {"monitor_drift"}
+    trigger = dag.get_task("trigger_retrain")
+    assert trigger.upstream_task_ids == {"drift_detected"}
+    assert trigger.trigger_dag_id == "retrain_monthly"

@@ -29,6 +29,8 @@ from src.reports import dashboard_data as dd  # noqa: E402
 BLUE_RAMP = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]  # sequential, light->dark
 SERIES_CASES = "#2a78d6"   # categorical slot 1 (blue)
 SERIES_RAIN = "#1baf7a"    # categorical slot 3 (aqua) - separate chart, never a second axis
+SERIES_FORECAST = "#eb6834"  # categorical slot 2 (orange)
+SERIES_NAIVE = "#52514e"   # secondary text grey, dashed - reference line
 NO_DATA = "#e0dfdb"
 DATE_AXIS = alt.Axis(format="%d %b", labelAngle=0, tickCount="week", labelOverlap="greedy")  # e.g. "07 Sep"
 
@@ -60,6 +62,12 @@ def load_district(district: str, since: str) -> tuple[pd.DataFrame, pd.DataFrame
 def load_forecast() -> pd.DataFrame:
     with dd.connect() as con:
         return dd.latest_forecast(con)
+
+
+@st.cache_data(ttl=600)
+def load_model_health() -> tuple[pd.DataFrame, pd.DataFrame, dict | None]:
+    with dd.connect() as con:
+        return dd.model_performance(con), dd.forecast_vs_actual(con, horizon=4), dd.latest_drift(con)
 
 
 @st.cache_data
@@ -255,12 +263,60 @@ else:
         },
     )
     st.caption(
-        f"Model v{fc['model_version'].iloc[0]} (LightGBM, MLflow @champion), based on WER data up to "
-        f"**{pd.Timestamp(fc['base_week_end'].iloc[0]):%d %b %Y}**. Per region (26 health regions, WER). "
+        f"Model v{fc['model_version'].iloc[0]} (LightGBM, MLflow @champion), based on case data up to "
+        f"**{pd.Timestamp(fc['base_week_end'].iloc[0]):%d %b %Y}**. Per region (26 health regions; WER, then NDCU). "
         "Outbreak level = the usual level for that region and time of year (last 5 years). "
         "**Watch** = forecast at 80% of it or more. Backtest 2014-2025: 12% lower error than 'same as this week' "
         "at 4 weeks; catches ~58-70% of outbreak weeks. Forecasts are uncertain - not official health advice."
     )
+
+# ---------- model health: forecast vs actual + data drift ----------
+st.subheader("Model health")
+perf, fva, drift = load_model_health()
+if perf.empty:
+    st.info("No matured forecasts yet. Backfill honest history with `python -m src.ml.replay`, then "
+            "`python -m src.pipeline` (builds gold.mart_forecast_accuracy).")
+else:
+    m1, m2, m3 = st.columns(3)
+    for col, h in ((m1, 2), (m2, 4)):
+        rows = perf[perf["horizon_weeks"] == h]
+        if rows.empty:
+            continue
+        mae = (rows["mae"] * rows["forecasts"]).sum() / rows["forecasts"].sum()
+        naive = (rows["naive_mae"] * rows["forecasts"]).sum() / rows["forecasts"].sum()
+        alerts, correct = rows["alerts"].sum(), rows["correct_alerts"].sum()
+        col.metric(f"Error, {h}-week forecast (cases/region)", f"{mae:.0f}",
+                   delta=f"{1 - mae / naive:+.0%} better than 'same as this week' ({naive:.0f})", delta_color="off",
+                   help=f"{int(rows['forecasts'].sum())} forecasts whose week has happened. "
+                        f"Alerts correct: {int(correct)}/{int(alerts)}.")
+    if drift:
+        m3.metric("Input data drift (Evidently)", "DETECTED" if drift["drift_detected"] else "normal",
+                  delta=f"{int(drift['n_drifted'])}/{int(drift['n_features'])} features vs same months, last 5 yrs",
+                  delta_color="off",
+                  help="Alarm when >= 60% of features drift (calibrated on 2014-2025: normal years 23-55%, "
+                       "2017 epidemic 64%). Drift triggers a retrain; the new model is only promoted if better.")
+    if not fva.empty:
+        long = fva.melt("target_week_end", ["actual", "forecast", "naive"], var_name="series", value_name="cases")
+        long["series"] = long["series"].map({"actual": "Actual", "forecast": "Forecast", "naive": "Naive"})
+        chart = (
+            alt.Chart(long).mark_line(strokeWidth=2, point=alt.OverlayMarkDef(size=40))
+            .encode(
+                x=alt.X("target_week_end:T", title="Week ending", axis=DATE_AXIS),
+                y=alt.Y("cases:Q", title="Cases (all regions)"),
+                color=alt.Color("series:N", title=None, legend=alt.Legend(orient="top"),
+                                scale=alt.Scale(domain=["Actual", "Forecast", "Naive"],
+                                                range=[SERIES_CASES, SERIES_FORECAST, SERIES_NAIVE])),
+                strokeDash=alt.condition(alt.datum.series == "Naive",
+                                         alt.value([5, 4]), alt.value([1, 0])),
+                tooltip=[alt.Tooltip("target_week_end:T", title="Week ending", format="%d %b %Y"),
+                         alt.Tooltip("series:N", title="Series"), alt.Tooltip("cases:Q", title="Cases", format=",.0f")],
+            )
+            .properties(title="Forecast made 4 weeks earlier vs what happened (national). "
+                             "Naive = cases 4 weeks earlier", height=280)
+        )
+        st.altair_chart(chart, width="stretch")
+    st.caption("Forecasts before the live model existed are an **as-of replay**: for each past week a model was "
+               "trained only on data available then (no hindsight). Table: gold.mart_forecast_accuracy.")
 
 # ---------- full table view (accessibility + exact numbers) ----------
 with st.expander(f"All 25 districts - {week} (table)"):

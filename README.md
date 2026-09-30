@@ -38,7 +38,8 @@ NDCU website          ─┘    retries · logging ·          ↓  load + valid
 | **SCD Type 2** | Region dimension built from dated reference snapshots (hash change detection, point-in-time joins, idempotent, out-of-order guard) — *currently demo data* |
 | **Gold (dbt)** | `dbt-duckdb` staging + marts, **80+ data tests** (unique, not_null, relationships, accepted values, ranges, grain, reconciliation vs silver, no-leakage target alignment) + docs |
 | **ML** | Feature mart in dbt (date-checked lags, rainfall 0–15 weeks back, endemic channel); baselines vs **LightGBM** growth model in a **walk-forward backtest** 2014–2025; every run in **MLflow**; model registry with **champion/challenger** promotion; monthly retrain DAG; weekly **batch scoring** to `ml.forecast_weekly` |
-| **Orchestration** | **Airflow 3.3.2** (LocalExecutor, Docker Compose): weekly DAG `extract → silver → SCD2 → dbt build → forecasts → alert` (+ dbt docs); `retrain_monthly`; separate ingest DAGs so a flaky government site doesn't block the pipeline; dbt and ML each in their own virtualenv |
+| **Monitoring** | **Forecast vs actual** vs naive (`gold.mart_forecast_accuracy`, as-of replay for honest history); **Evidently data drift** vs the same season in past years, alarm **calibrated on 2014–2025**; drift automatically triggers a retrain; "Model health" in the dashboard + `GET /model/health` |
+| **Orchestration** | **Airflow 3.3.2** (LocalExecutor, Docker Compose): weekly DAG `extract → silver → SCD2 → dbt build → forecasts → alert` (+ dbt docs, drift check → retrain if drifted); `retrain_monthly`; separate ingest DAGs so a flaky government site doesn't block the pipeline; dbt and ML each in their own virtualenv |
 | **Dashboard** | Streamlit: district map of weekly cases, KPIs, national + district trends, rainfall 1–4 weeks earlier, **2- and 4-week forecast table with risk levels**, data-freshness line and disclaimer |
 | **Alerts & API** | Weekly Telegram message (top districts + regions forecast near their outbreak level, stale forecasts hidden, sent once per week); read-only FastAPI incl. `/forecast`, typed responses, OpenAPI docs |
 | **Quality** | GitHub Actions CI on every push: ruff + mypy + pytest, the **full pipeline + dbt build on sample data**, and Airflow DAG integrity; real-PDF regression tests; config via environment variables |
@@ -84,6 +85,7 @@ uvicorn src.api.main:app --reload                          # http://localhost:80
 | `GET /hotspots?week=2026-W37&top=5` | districts ranked by cases (default: latest week) |
 | `GET /districts` · `GET /districts/{district}/trend` | district list · weekly cases + rainfall |
 | `GET /forecast?top=5` | 2- and 4-week forecasts per region with risk level (latest batch, model version) |
+| `GET /model/health` | forecast vs actual (vs naive) per model and horizon + latest data-drift check |
 
 **ML (MLflow tracking + registry):**
 ```bash
@@ -92,6 +94,8 @@ docker compose up -d mlflow                               # http://localhost:500
 python -m src.ml.backtest                                 # baselines vs LightGBM, all runs in MLflow
 python -m src.ml.train                                    # train -> register -> promote to @champion if better
 python -m src.ml.predict                                  # batch-score latest week -> ml.forecast_weekly
+python -m src.ml.replay                                   # as-of replay of the last 16 weeks (honest history)
+python -m src.ml.monitor                                  # Evidently drift check -> ml.drift_runs + HTML report
 ```
 
 **Airflow (scheduled):**
@@ -131,7 +135,8 @@ docs/            data model, source notes, design decisions
 - [x] Phase 3 – Gold: dengue fact tables (NDCU + WER), ML feature mart (lags, endemic channel)
 - [x] Phase 4 – ML: baselines vs LightGBM, walk-forward backtest, MLflow tracking + registry, champion/challenger, monthly retrain
 - [x] Phase 5 – Serving: Streamlit + Folium map, FastAPI, weekly Telegram alert — all with forecasts
-- [ ] Phase 6 – Production: ~~GitHub Actions CI~~ ✅, drift monitoring (Evidently), forecast-vs-actual tracking, demo video
+- [x] Phase 6 – Production: GitHub Actions CI, forecast-vs-actual tracking, Evidently drift monitoring with automatic retrain trigger
+- [ ] Portfolio polish: README screenshots, demo video, LinkedIn post
 - [ ] Phase 7 – Cloud: Azure (Data Factory, storage) + Databricks Free Edition
 
 ## Author
