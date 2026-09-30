@@ -6,7 +6,7 @@ sources:
     schema: main
     tables:
       - name: weather_daily
-        description: One row per district per day (newest pull wins), ERA5-Land
+        description: One row per district per day (newest pull wins), Open-Meteo era5_seamless
       - name: weather_weekly
         description: One row per district per Sat->Fri epi week
       - name: dim_district

@@ -134,3 +134,38 @@ models:
               arguments:
                 to: ref('dim_district')
                 field: district_sk
+
+  - name: mart_ml_features
+    description: >
+      ML training table. Grain = RDHS x WER week. Features use only data up to week_end (no leakage);
+      targets = cases 2 and 4 weeks later. Lags/leads are date-checked; weather windows with a missing day are NULL.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [rdhs, week_start]
+    columns:
+      - name: district_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_district')
+                field: district_sk
+      - name: cases
+        data_tests:
+          - not_null
+          - in_range:
+              arguments: {min_value: 0}
+      - name: rainy_days_4w
+        data_tests:
+          - in_range:
+              arguments: {min_value: 0, max_value: 28}
+      - name: rain_w0_mm
+        data_tests:
+          - in_range:
+              arguments: {min_value: 0}
+      - name: month
+        data_tests:
+          - not_null
+          - in_range:
+              arguments: {min_value: 1, max_value: 12}
