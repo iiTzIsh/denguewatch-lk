@@ -81,3 +81,20 @@ def model_matrix(df: pd.DataFrame, use_weather: bool = True) -> pd.DataFrame:
         for c in WEATHER_COLS:
             out[c] = df[c]
     return out
+
+
+# Exactly what the served model needs (its MLflow input schema). Numbers as float, so missing
+# values (NaN) are allowed - a region with no weather yet still gets a forecast from case history.
+SERVING_KEYS = ["rdhs", "week_start", "week_end"]
+SERVING_NUMERIC = sorted({
+    *CASE_COLS_REL, "cases_mean_4w", "endemic_sd_5y", "month",
+    *(f"seasonal_naive_h{h}" for h in HORIZONS), *WEATHER_COLS,
+})
+
+
+def serving_frame(df: pd.DataFrame) -> pd.DataFrame:
+    out = df[SERVING_KEYS].copy()
+    out["rdhs"] = out["rdhs"].astype(str)
+    for c in SERVING_NUMERIC:
+        out[c] = pd.to_numeric(df[c], errors="coerce").astype("float64")
+    return out.reset_index(drop=True)

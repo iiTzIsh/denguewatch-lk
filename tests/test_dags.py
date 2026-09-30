@@ -12,7 +12,7 @@ from airflow.models import DagBag  # noqa: E402
 def test_dags_load_without_errors():
     bag = DagBag(dag_folder=str(Path(__file__).parents[1] / "dags"))
     assert bag.import_errors == {}
-    assert {"denguewatch_weekly", "wer_ingest_weekly", "ndcu_ingest_weekly"} <= set(bag.dag_ids)
+    assert {"denguewatch_weekly", "wer_ingest_weekly", "ndcu_ingest_weekly", "retrain_monthly"} <= set(bag.dag_ids)
 
 
 def test_weekly_dag_task_order():
@@ -23,3 +23,11 @@ def test_weekly_dag_task_order():
     # docs + alert only run after a successful dbt build
     assert dag.get_task("send_alert").upstream_task_ids == {"dbt_build"}
     assert dag.get_task("dbt_docs").upstream_task_ids == {"dbt_build"}
+
+
+def test_retrain_uses_ml_venv_and_runs_monthly():
+    bag = DagBag(dag_folder=str(Path(__file__).parents[1] / "dags"))
+    dag = bag.dags["retrain_monthly"]
+    task = dag.get_task("train_and_promote")
+    assert "/opt/airflow/ml_venv/bin/python -m src.ml.train" in task.bash_command
+    assert dag.max_active_runs == 1

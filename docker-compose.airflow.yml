@@ -29,6 +29,11 @@ x-airflow-common:
     PYTHONPATH: /opt/airflow/project
     DW_DATA_DIR: /opt/airflow/project/data
     DW_LOG_DIR: /opt/airflow/project/logs
+    # MLflow runs in the other compose file (docker compose up -d mlflow) -> reach it through the host
+    MLFLOW_TRACKING_URI: http://host.docker.internal:5000
+    MLFLOW_DISABLE_TELEMETRY: "true"
+  extra_hosts:
+    - "host.docker.internal:host-gateway"     # needed on Linux; Docker Desktop (Windows/Mac) has it built in
   volumes:
     - ./dags:/opt/airflow/dags
     - ./infra/airflow/logs:/opt/airflow/logs
@@ -40,6 +45,7 @@ x-airflow-common:
     - ./reference:/opt/airflow/project/reference
     - ./data:/opt/airflow/project/data
     - ./logs:/opt/airflow/project/logs
+    - ./requirements-ml.txt:/opt/airflow/project/requirements-ml.txt:ro   # logged with each model
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on

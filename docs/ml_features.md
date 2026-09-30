@@ -57,3 +57,17 @@ What this shows:
 Known issue: the current outbreak rule (5-year mean + 2 SD) marks ~17% of weeks as outbreaks, which is too many to be useful as an alert. To revisit before alerts use the forecast.
 
 Reproduce: `python -m src.ml.backtest`. Every number above is a run in the MLflow experiment `denguewatch-forecast`.
+
+## Training, registry and promotion (`src/ml/train.py`)
+
+```
+backtest (2014–2025) → fit on all weeks → log pyfunc to MLflow → register new version of denguewatch-forecaster
+      → promote to @champion only if:  beats naive at h=2 AND h=4  AND  ≤ 1% worse MAE than the current champion
+      → old champion keeps @previous_champion (rollback = move the alias back)
+```
+
+- **One model, both horizons.** A pyfunc wrapper carries the feature code (`code_paths=src`), so the API, dashboard and alert just call `predict()`.
+- **Explicit input schema.** Callers pass `serving_frame(rows)`: 23 float columns, with NaN allowed.
+- **Data gate.** Training refuses to run with fewer than 10,000 labelled rows (e.g. a half-built warehouse). It exits with code 2.
+- **Schedule.** Airflow `retrain_monthly` runs at 09:00 on the 1st of each month in its own ML virtualenv.
+- **Load the champion:** `mlflow.pyfunc.load_model("models:/denguewatch-forecaster@champion")`
