@@ -79,3 +79,29 @@ def freshness(con: duckdb.DuckDBPyConnection) -> dict[str, date | None]:
         """
     ).fetchone()
     return {"ndcu_until": row[0] if row else None, "weather_until": row[1] if row else None}
+
+
+FORECAST_SQL = """
+SELECT
+    rdhs, district, base_week_end, cases_now, model_version,
+    max(pred_cases)     FILTER (WHERE horizon_weeks = 2) AS pred_2w,
+    max(outbreak_level) FILTER (WHERE horizon_weeks = 2) AS level_2w,
+    max(risk_level)     FILTER (WHERE horizon_weeks = 2) AS risk_2w,
+    max(pred_cases)     FILTER (WHERE horizon_weeks = 4) AS pred_4w,
+    max(outbreak_level) FILTER (WHERE horizon_weeks = 4) AS level_4w,
+    max(risk_level)     FILTER (WHERE horizon_weeks = 4) AS risk_4w
+FROM ml.forecast_latest
+GROUP BY ALL
+ORDER BY
+    least(CASE max(risk_level) FILTER (WHERE horizon_weeks = 2) WHEN 'high' THEN 0 WHEN 'watch' THEN 1 ELSE 2 END,
+          CASE max(risk_level) FILTER (WHERE horizon_weeks = 4) WHEN 'high' THEN 0 WHEN 'watch' THEN 1 ELSE 2 END),
+    max(pred_cases / outbreak_level) FILTER (WHERE horizon_weeks = 4) DESC NULLS LAST
+"""
+
+
+def latest_forecast(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """Newest batch of forecasts, one row per region, riskiest first. Empty if none scored yet."""
+    try:
+        return con.execute(FORECAST_SQL).df()
+    except duckdb.CatalogException:        # ml.forecast_latest not created yet (python -m src.ml.predict)
+        return pd.DataFrame()

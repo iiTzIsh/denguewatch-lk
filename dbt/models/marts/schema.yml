@@ -137,8 +137,9 @@ models:
 
   - name: mart_ml_features
     description: >
-      ML training table. Grain = RDHS x WER week. Features use only data up to week_end (no leakage);
-      targets = cases 2 and 4 weeks later. Lags/leads are date-checked; weather windows with a missing day are NULL.
+      ML training + scoring table. Grain = RDHS x week (WER history, then NDCU weeks after WER ends).
+      Features use only data up to week_end (no leakage); targets = cases 2 and 4 weeks later.
+      Lags/leads are date-checked; weather windows with a missing day are NULL.
     data_tests:
       - unique_combination:
           arguments:
@@ -156,6 +157,12 @@ models:
           - not_null
           - in_range:
               arguments: {min_value: 0}
+      - name: case_source
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['WER', 'NDCU']
       - name: rainy_days_4w
         data_tests:
           - in_range:

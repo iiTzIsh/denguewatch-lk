@@ -8,6 +8,7 @@ Endpoints:
   GET /hotspots?week=2026-W37&top=5    districts ranked by cases for a week (default: latest)
   GET /districts                       the 25 districts
   GET /districts/{district}/trend      weekly cases (+ rainfall) for one district
+  GET /forecast?top=5                  2- and 4-week case forecasts per region with risk level (@champion model)
 """
 from __future__ import annotations
 
@@ -67,6 +68,27 @@ class TrendPoint(BaseModel):
     week_start: date
     cases: int
     rain_mm: float | None
+
+
+class ForecastRegion(BaseModel):
+    rdhs: str
+    district: str
+    cases_now: int
+    pred_cases_2w: float
+    outbreak_level_2w: float | None
+    risk_2w: str
+    pred_cases_4w: float
+    outbreak_level_4w: float | None
+    risk_4w: str
+
+
+class ForecastResponse(BaseModel):
+    model_version: str
+    based_on_week_ending: date
+    regions: list[ForecastRegion]
+    risk_levels: str = ("high: forecast >= outbreak level | watch: >= 80% of it | normal | "
+                        "unknown: not enough history. Outbreak level = usual level for that region and time of year.")
+    disclaimer: str = DISCLAIMER
 
 
 # ---------- one read-only connection per request ----------
@@ -148,3 +170,20 @@ def district_trend(con: Con, district: str) -> list[TrendPoint]:
                    cases=int(r["cases"]), rain_mm=_none_if_nan(r["rain_mm"]))
         for r in df.to_dict("records")
     ]
+
+
+@app.get("/forecast", response_model=ForecastResponse)
+def forecast(con: Con, top: Annotated[int, Query(ge=1, le=26)] = 26) -> ForecastResponse:
+    df = dd.latest_forecast(con)
+    if df.empty:
+        raise HTTPException(404, "No forecasts yet - run: python -m src.ml.predict")
+    regions = [
+        ForecastRegion(
+            rdhs=str(r["rdhs"]), district=str(r["district"]), cases_now=int(r["cases_now"]),
+            pred_cases_2w=float(r["pred_2w"]), outbreak_level_2w=_none_if_nan(r["level_2w"]), risk_2w=str(r["risk_2w"]),
+            pred_cases_4w=float(r["pred_4w"]), outbreak_level_4w=_none_if_nan(r["level_4w"]), risk_4w=str(r["risk_4w"]),
+        )
+        for r in df.head(top).to_dict("records")
+    ]
+    return ForecastResponse(model_version=str(df["model_version"].iloc[0]),
+                            based_on_week_ending=df["base_week_end"].iloc[0], regions=regions)

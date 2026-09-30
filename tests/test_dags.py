@@ -20,8 +20,9 @@ def test_weekly_dag_task_order():
     dag = bag.dags["denguewatch_weekly"]  # read from parsed files, no DB needed
     order = [t.task_id for t in dag.topological_sort()]
     assert order[:4] == ["extract_weather", "load_silver", "scd2_regions", "dbt_build"]
-    # docs + alert only run after a successful dbt build
-    assert dag.get_task("send_alert").upstream_task_ids == {"dbt_build"}
+    # docs + forecasts only run after a successful dbt build; the alert waits for the forecasts
+    assert dag.get_task("predict_forecasts").upstream_task_ids == {"dbt_build"}
+    assert dag.get_task("send_alert").upstream_task_ids == {"predict_forecasts"}
     assert dag.get_task("dbt_docs").upstream_task_ids == {"dbt_build"}
 
 

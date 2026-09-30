@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import duckdb
+import pandas as pd
 import pytest
 
 fastapi = pytest.importorskip("fastapi")
@@ -59,3 +60,22 @@ def test_districts_and_trend(client):
     trend = client.get("/districts/Colombo/trend").json()
     assert [p["week"] for p in trend] == ["2026-W36", "2026-W37"]
     assert client.get("/districts/atlantis/trend").status_code == 404
+
+
+def test_forecast_404_before_scoring(client):
+    assert client.get("/forecast").status_code == 404
+
+
+def test_forecast_endpoint(client, tmp_path):
+    from src.ml import predict
+    r = pd.DataFrame({"rdhs": ["colombo"], "district": ["colombo"],
+                      "week_start": pd.to_datetime(["2026-05-11"]), "week_end": pd.to_datetime(["2026-05-17"]),
+                      "cases": [308], "target_threshold_h2": [400.0], "target_threshold_h4": [float("nan")]})
+    fc = predict.to_long(r, pd.DataFrame({"pred_cases_h2": [410.0], "pred_cases_h4": [420.0]}), "7",
+                         pd.Timestamp("2026-09-30").to_pydatetime())
+    with duckdb.connect(str(tmp_path / "w.duckdb")) as con:
+        predict.write(con, fc)
+    body = client.get("/forecast?top=1").json()
+    assert body["model_version"] == "7" and body["based_on_week_ending"] == "2026-05-17"
+    region = body["regions"][0]
+    assert region["risk_2w"] == "high" and region["risk_4w"] == "unknown" and region["outbreak_level_4w"] is None

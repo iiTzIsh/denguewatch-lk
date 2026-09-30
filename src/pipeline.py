@@ -1,5 +1,6 @@
 """
 Run the whole local pipeline in order - one command (Airflow runs the same steps as separate tasks).
+Ends with batch forecasts from the @champion model if MLflow is running (skipped with a warning otherwise).
 
 Run:  python -m src.pipeline                       (silver -> SCD2 -> dbt build, using existing bronze)
       python -m src.pipeline --fetch --start 2024-01-01 --end 2024-12-31   (also re-pull weather)
@@ -55,6 +56,8 @@ def main() -> None:
     run_step("load silver", py("src.load.duckdb_load"))
     run_step("scd2 regions", py("src.transform.scd2"))
     run_step("dbt build (gold models + tests)", [DBT_BIN, "build", *DBT_ARGS])
+    # --soft: if MLflow isn't running / no champion yet, warn and carry on (cases-only outputs still work)
+    run_step("forecast with @champion model", py("src.ml.predict", "--soft"))
     logger.info("PIPELINE DONE")
 
 

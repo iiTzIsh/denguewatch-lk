@@ -49,6 +49,8 @@ def evaluate(df: pd.DataFrame) -> dict[str, float]:
         metrics[f"rmse_h{h}"] = s["rmse"]
         metrics[f"outbreak_recall_h{h}"] = s["outbreak_recall"]
         metrics[f"outbreak_precision_h{h}"] = s["outbreak_precision"]
+        metrics[f"alert_recall_h{h}"] = s["alert_recall"]
+        metrics[f"alert_precision_h{h}"] = s["alert_precision"]
         metrics[f"skill_vs_naive_h{h}"] = backtest.skill_vs_naive(pred, df, h, backtest.TEST_YEARS)
     return metrics
 

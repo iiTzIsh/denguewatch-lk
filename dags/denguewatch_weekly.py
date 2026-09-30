@@ -1,7 +1,7 @@
 """
 DAG: denguewatch_weekly
 Every Monday 07:00 (Sri Lanka time): weather -> silver -> SCD2 -> dbt build (gold + tests)
--> dbt docs + Telegram alert.
+-> batch forecasts with the @champion model (MLflow) -> Telegram alert;  dbt docs in parallel.
 
 Each task runs one of our existing modules (same commands you run by hand),
 so the pipeline code stays independent of Airflow.
@@ -17,6 +17,7 @@ from airflow.sdk import DAG
 PROJECT = "/opt/airflow/project"   # mounted by docker-compose.airflow.yml
 DBT = "/opt/airflow/dbt_venv/bin/dbt"
 DBT_ARGS = "--project-dir dbt --profiles-dir dbt"
+ML_PY = "/opt/airflow/ml_venv/bin/python"
 
 # Run date for this DAG run. Scheduled runs have a logical_date; manual runs may not -> use run_after.
 RUN_DATE = "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}"
@@ -61,11 +62,18 @@ with DAG(
         bash_command=f"cd {PROJECT} && {DBT} docs generate {DBT_ARGS}",
     )
 
+    predict = BashOperator(
+        task_id="predict_forecasts",
+        # --soft: if MLflow is down or no champion exists, log a warning and let the cases-only alert go out
+        bash_command=f"cd {PROJECT} && {ML_PY} -m src.ml.predict --soft",
+    )
+
     send_alert = BashOperator(
         task_id="send_alert",
         # Telegram token/chat id come from .env (docker-compose env_file). Sends once per week (idempotent).
         bash_command=f"cd {PROJECT} && python -m src.alerts.telegram",
     )
 
-    # dependencies: left runs before right; docs and alert both wait for a GREEN dbt build
-    extract_weather >> load_silver >> scd2_regions >> dbt_build >> [dbt_docs, send_alert]
+    # dependencies: left runs before right; docs and forecasts both wait for a GREEN dbt build
+    extract_weather >> load_silver >> scd2_regions >> dbt_build >> [dbt_docs, predict]
+    predict >> send_alert

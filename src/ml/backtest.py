@@ -31,6 +31,7 @@ from src.config import MLFLOW_EXPERIMENT, MLFLOW_TRACKING_URI
 from src.log_setup import setup_logging
 from src.ml.features import HORIZONS, TARGETS, THRESHOLDS, load_features
 from src.ml.models import BASELINES, MODELS, Forecaster, LastValue, LightGBMGrowth
+from src.ml.risk import is_alert
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ def score(pred: pd.DataFrame) -> dict[str, float]:
         "rmse": float(np.sqrt((err**2).mean())),
         "n_rows": float(len(pred)),
     }
-    # outbreak = cases above the endemic threshold (mean + 2 SD of the same week in the last 5 years)
+    # outbreak = cases above the endemic threshold of that week (see src/ml/risk.py)
     lab = pred[pred["threshold"].notna()]
     actual = lab["y_true"] > lab["threshold"]
     called = lab["y_pred"] > lab["threshold"]
@@ -76,6 +77,11 @@ def score(pred: pd.DataFrame) -> dict[str, float]:
     m["outbreak_weeks"] = float(actual.sum())
     m["outbreak_recall"] = tp / actual.sum() if actual.sum() else float("nan")
     m["outbreak_precision"] = tp / called.sum() if called.sum() else float("nan")
+    # what the ALERT uses: forecast >= ALERT_RATIO x outbreak level ("watch" or "high")
+    alert = is_alert(lab["y_pred"], lab["threshold"])
+    tp_a = float((actual & alert).sum())
+    m["alert_recall"] = tp_a / actual.sum() if actual.sum() else float("nan")
+    m["alert_precision"] = tp_a / alert.sum() if alert.sum() else float("nan")
     return m
 
 

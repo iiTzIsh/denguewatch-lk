@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/iiTzIsh/denguewatch-lk/actions/workflows/ci.yml/badge.svg)](https://github.com/iiTzIsh/denguewatch-lk/actions/workflows/ci.yml)
 
-**Automated dengue outbreak early-warning pipeline for Sri Lanka** — ingests weather and dengue surveillance data weekly, models it into a tested star schema, and (in progress) forecasts district-level outbreak risk 2–4 weeks ahead.
+**Automated dengue outbreak early-warning pipeline for Sri Lanka** — ingests weather and dengue surveillance data weekly, models it into a tested star schema, and forecasts outbreak risk for all 26 health regions 2 and 4 weeks ahead (LightGBM, tracked and versioned in MLflow).
 
 > ⚠️ **Disclaimer:** This is a portfolio project, **not official health advice**. For official dengue information see the [National Dengue Control Unit](https://www.dengue.health.gov.lk/).
 
@@ -21,8 +21,10 @@ NDCU website          ─┘    retries · logging ·          ↓  load + valid
                                                          ↓  SCD2 (regions) + dbt build
                                                      GOLD    star schema: dim_epi_week, dim_city,
                                                              dim_region (SCD2), fact_weather_weekly
-                                                         ↓  (planned)
-                            ML forecast (LightGBM + MLflow) → FastAPI → Streamlit map → weekly alert
+                                                         ↓  gold.mart_ml_features (lags, rain 0-15 wks, endemic channel)
+                            ML: walk-forward backtest → MLflow registry (@champion) → weekly batch scoring
+                                                         ↓  ml.forecast_weekly
+                                                 Streamlit dashboard · FastAPI · Telegram alert
 ```
 
 ![dbt lineage graph](docs/images/dbt_lineage.png)
@@ -30,15 +32,27 @@ NDCU website          ─┘    retries · logging ·          ↓  load + valid
 ## What works today
 | Area | Details |
 |---|---|
-| **Extraction** | Open-Meteo archive API for all **25 districts** (centroids from geoBoundaries/OSM), pinned to **ERA5-Land** for a consistent 2006→now series, resumable year-chunked backfill that stops cleanly on rate limits, retries/backoff, `fetched_at` lineage; WER listing scraper (robots.txt check, caching, regex parsing of epi weeks) |
+| **Extraction** | Open-Meteo archive API for all **25 districts** (centroids from geoBoundaries/OSM), pinned to **ERA5 (era5_seamless)** for a consistent 2006→now series with rainfall, >5% missing values rejects a pull, resumable year-chunked backfill that stops cleanly on rate limits, retries/backoff, `fetched_at` lineage; WER listing scraper (robots.txt check, caching, regex parsing of epi weeks) |
 | **Silver** | Multi-file load into DuckDB, **newest-pull-wins** de-duplication for overlapping pulls, orphan (referential) check |
 | **Epi weeks** | Sri Lankan epidemiological weeks run **Saturday → Friday**; calendar dimension 2006–2027 validated against WER dates |
 | **SCD Type 2** | Region dimension built from dated reference snapshots (hash change detection, point-in-time joins, idempotent, out-of-order guard) — *currently demo data* |
-| **Gold (dbt)** | `dbt-duckdb` staging + marts, **21 data tests** (unique, not_null, relationships, accepted values, ranges, grain, reconciliation vs silver) + docs |
-| **Orchestration** | **Airflow 3.3.2** (LocalExecutor, Docker Compose): weekly DAG `extract → silver → SCD2 → dbt build → dbt docs`; separate WER DAG so a flaky government site doesn't block the pipeline |
-| **Dashboard** | Streamlit: district map of weekly cases, KPIs, national + district trends, rainfall 1–4 weeks earlier, table view, data-freshness line and disclaimer |
-| **Alerts & API** | Weekly Telegram message (top districts, sent once per week, only after a green dbt build); read-only FastAPI with typed responses, input validation and OpenAPI docs |
+| **Gold (dbt)** | `dbt-duckdb` staging + marts, **80+ data tests** (unique, not_null, relationships, accepted values, ranges, grain, reconciliation vs silver, no-leakage target alignment) + docs |
+| **ML** | Feature mart in dbt (date-checked lags, rainfall 0–15 weeks back, endemic channel); baselines vs **LightGBM** growth model in a **walk-forward backtest** 2014–2025; every run in **MLflow**; model registry with **champion/challenger** promotion; monthly retrain DAG; weekly **batch scoring** to `ml.forecast_weekly` |
+| **Orchestration** | **Airflow 3.3.2** (LocalExecutor, Docker Compose): weekly DAG `extract → silver → SCD2 → dbt build → forecasts → alert` (+ dbt docs); `retrain_monthly`; separate ingest DAGs so a flaky government site doesn't block the pipeline; dbt and ML each in their own virtualenv |
+| **Dashboard** | Streamlit: district map of weekly cases, KPIs, national + district trends, rainfall 1–4 weeks earlier, **2- and 4-week forecast table with risk levels**, data-freshness line and disclaimer |
+| **Alerts & API** | Weekly Telegram message (top districts + regions forecast near their outbreak level, stale forecasts hidden, sent once per week); read-only FastAPI incl. `/forecast`, typed responses, OpenAPI docs |
 | **Quality** | GitHub Actions CI on every push: ruff + mypy + pytest, the **full pipeline + dbt build on sample data**, and Airflow DAG integrity; real-PDF regression tests; config via environment variables |
+
+## Forecast results
+Walk-forward backtest (train on past years only, test each year 2014–2025, 16,250 region-weeks). Mean absolute error in weekly cases per region:
+
+| Model | 2 weeks ahead | 4 weeks ahead |
+|---|---|---|
+| "Same as this week" (naive) | 15.49 | 21.62 |
+| LightGBM, no weather | 15.25 | 19.59 |
+| **LightGBM + weather** | **15.03 (−3%)** | **18.99 (−12%)** |
+
+**Out-of-sample 2026 epidemic** (model trained on data to mid-May only; NDCU weeks Jun–Sep 2026): error 48.5 vs 65.9 (−26%) at 2 weeks and 68.0 vs 121.0 (−44%) at 4 weeks. It picked up the **turn after the July peak**; it under-forecast the **start** of the rise. Rain 12–15 weeks earlier is a top feature at 4 weeks, close to the ~3-month lag reported for Gampaha (Withanage et al. 2018). Details: [docs/ml_features.md](docs/ml_features.md).
 
 ## Run it
 **Local (Python 3.11+):**
@@ -69,6 +83,16 @@ uvicorn src.api.main:app --reload                          # http://localhost:80
 | `GET /weeks` | ISO weeks with NDCU data |
 | `GET /hotspots?week=2026-W37&top=5` | districts ranked by cases (default: latest week) |
 | `GET /districts` · `GET /districts/{district}/trend` | district list · weekly cases + rainfall |
+| `GET /forecast?top=5` | 2- and 4-week forecasts per region with risk level (latest batch, model version) |
+
+**ML (MLflow tracking + registry):**
+```bash
+pip install -r requirements-ml.txt
+docker compose up -d mlflow                               # http://localhost:5000
+python -m src.ml.backtest                                 # baselines vs LightGBM, all runs in MLflow
+python -m src.ml.train                                    # train -> register -> promote to @champion if better
+python -m src.ml.predict                                  # batch-score latest week -> ml.forecast_weekly
+```
 
 **Airflow (scheduled):**
 ```bash
@@ -82,7 +106,9 @@ dags/            Airflow DAGs
 dbt/             dbt project (staging + marts + tests)
 src/extract/     weather.py, wer_links.py, wer_pdf.py
 src/load/        DuckDB loading, SQL runner
-src/transform/   SCD2 region dimension
+src/transform/   NDCU PDF parser, SCD2 region dimension
+src/ml/          features, models, backtest, train (registry), predict (batch scoring), risk rule
+src/api/ · dashboard/ · src/alerts/   serving: FastAPI, Streamlit, Telegram
 reference/       small versioned reference data (districts, MOH snapshots)
 infra/airflow/   Airflow image (dbt in its own virtualenv)
 tests/           pytest
@@ -92,20 +118,20 @@ docs/            data model, source notes, design decisions
 ## Data sources
 | Source | Use | Notes |
 |---|---|---|
-| [Open-Meteo](https://open-meteo.com/) | Daily rainfall & temperature (ERA5-Land) | Free archive API, no key · CC BY 4.0 |
+| [Open-Meteo](https://open-meteo.com/) | Daily rainfall & temperature (ERA5, era5_seamless) | Free archive API, no key · CC BY 4.0 |
 | [geoBoundaries](https://github.com/wmgeolab/geoBoundaries) | District boundaries → centroids | gbOpen LKA ADM2, from OpenStreetMap · ODbL 1.0 |
 | [Epidemiology Unit – WER](https://www.epid.gov.lk/weekly-epidemiological-report) | Original WER PDFs | Our scraper is ready; site returning HTTP 500 since 28 Sep 2026 |
-| [NDCU](https://www.dengue.health.gov.lk/) | Weekly cases per RDHS (2026) | Weekly update PDFs, parsed + validated |
+| [NDCU](https://www.dengue.health.gov.lk/) | Weekly cases per RDHS (2026) | Weekly update PDFs, parsed + validated against printed totals; also the live case feed for forecasts after the WER history ends |
 | [denguedatahub](https://github.com/thiyangt/denguedatahub) (Talagala) | **Weekly dengue history 2007–2026** per RDHS, from the Epidemiology Unit's WER | R package data, GPL-3, pinned commit; cross-checked against NDCU (ADR 0002) |
 
 ## Roadmap
 - [x] Phase 0 – Foundations: tested extractors, DuckDB, Docker, Airflow, dbt
-- [ ] Phase 1 – Ingestion: ~~district coordinates~~ ✅, weather backfill 2006→now, NDCU + WER ingestion
-- [ ] Phase 2 – Silver: WER PDF table parser, region mapping (real MOH changes), quality gates
-- [ ] Phase 3 – Gold: dengue fact table, ML feature mart (lags, endemic channel)
-- [ ] Phase 4 – ML: baselines vs LightGBM, walk-forward backtest, MLflow
-- [x] Phase 5 – Serving: Streamlit + Folium map, FastAPI, weekly Telegram alert (monitoring; forecasts come with Phase 4)
-- [ ] Phase 6 – Production: GitHub Actions CI, drift monitoring, demo video
+- [x] Phase 1 – Ingestion: district coordinates, weather backfill 2006→now, NDCU PDFs, WER history (denguedatahub)
+- [ ] Phase 2 – Silver: region mapping with real MOH changes (SCD2 uses demo data), population data
+- [x] Phase 3 – Gold: dengue fact tables (NDCU + WER), ML feature mart (lags, endemic channel)
+- [x] Phase 4 – ML: baselines vs LightGBM, walk-forward backtest, MLflow tracking + registry, champion/challenger, monthly retrain
+- [x] Phase 5 – Serving: Streamlit + Folium map, FastAPI, weekly Telegram alert — all with forecasts
+- [ ] Phase 6 – Production: ~~GitHub Actions CI~~ ✅, drift monitoring (Evidently), forecast-vs-actual tracking, demo video
 - [ ] Phase 7 – Cloud: Azure (Data Factory, storage) + Databricks Free Edition
 
 ## Author

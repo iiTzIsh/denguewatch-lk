@@ -56,6 +56,12 @@ def load_district(district: str, since: str) -> tuple[pd.DataFrame, pd.DataFrame
         return dd.district_trend(con, district), dd.district_rain(con, district, since)
 
 
+@st.cache_data(ttl=600)
+def load_forecast() -> pd.DataFrame:
+    with dd.connect() as con:
+        return dd.latest_forecast(con)
+
+
 @st.cache_data
 def load_geojson() -> dict:
     return json.loads((REFERENCE_DIR / "geo" / "lka_districts.geojson").read_text(encoding="utf-8"))
@@ -219,6 +225,42 @@ with c2:
             .properties(title="Weekly rainfall (includes 6 weeks before the first case week)", height=240),
             width="stretch",
         )
+
+# ---------- forecast (batch-scored by src.ml.predict with the MLflow @champion model) ----------
+st.subheader("Forecast - next 2 and 4 weeks")
+fc = load_forecast()
+if fc.empty:
+    st.info("No forecasts yet. Start MLflow (`docker compose up -d mlflow`), train once (`python -m src.ml.train`), "
+            "then run `python -m src.ml.predict`.")
+else:
+    RISK_LABEL = {"high": "🔴 High", "watch": "🟠 Watch", "normal": "Normal", "unknown": "Not enough history"}
+    view = pd.DataFrame({
+        "Region": fc["rdhs"].str.replace("_", " ").str.title(),
+        "Cases now": fc["cases_now"],
+        "In 2 weeks": fc["pred_2w"].round(0),
+        "Risk (2 wk)": fc["risk_2w"].map(RISK_LABEL),
+        "In 4 weeks": fc["pred_4w"].round(0),
+        "Outbreak level (4 wk)": fc["level_4w"].round(0),
+        "% of outbreak level (4 wk)": (fc["pred_4w"] / fc["level_4w"]).clip(upper=1.5),
+        "Risk (4 wk)": fc["risk_4w"].map(RISK_LABEL),
+    })
+    st.dataframe(
+        view, hide_index=True, width="stretch",
+        column_config={
+            "Cases now": st.column_config.NumberColumn(format="%d"),
+            "In 2 weeks": st.column_config.NumberColumn(format="%d"),
+            "In 4 weeks": st.column_config.NumberColumn(format="%d"),
+            "Outbreak level (4 wk)": st.column_config.NumberColumn(format="%d"),
+            "% of outbreak level (4 wk)": st.column_config.ProgressColumn(format="percent", min_value=0, max_value=1.5),
+        },
+    )
+    st.caption(
+        f"Model v{fc['model_version'].iloc[0]} (LightGBM, MLflow @champion), based on WER data up to "
+        f"**{pd.Timestamp(fc['base_week_end'].iloc[0]):%d %b %Y}**. Per region (26 health regions, WER). "
+        "Outbreak level = the usual level for that region and time of year (last 5 years). "
+        "**Watch** = forecast at 80% of it or more. Backtest 2014-2025: 12% lower error than 'same as this week' "
+        "at 4 weeks; catches ~58-70% of outbreak weeks. Forecasts are uncertain - not official health advice."
+    )
 
 # ---------- full table view (accessibility + exact numbers) ----------
 with st.expander(f"All 25 districts - {week} (table)"):

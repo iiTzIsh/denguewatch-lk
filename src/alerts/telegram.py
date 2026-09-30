@@ -1,5 +1,8 @@
 """
-Weekly Telegram alert: this week's top districts by dengue cases (from gold.mart_ndcu_monitoring).
+Weekly Telegram alert:
+  1. this week's top districts by dengue cases       (gold.mart_ndcu_monitoring, NDCU)
+  2. regions FORECAST near/above their outbreak level (ml.forecast_latest, written by src.ml.predict)
+Part 2 is simply left out if no forecasts exist yet - the cases alert never depends on the model.
 
 Setup (once): create a bot with @BotFather, then put in .env (never committed):
     TELEGRAM_BOT_TOKEN=123456:ABC...
@@ -24,12 +27,15 @@ import requests
 
 from src.config import ALERTS_DIR, DB_PATH
 from src.log_setup import setup_logging
+from src.reports.dashboard_data import latest_forecast
 
 logger = logging.getLogger(__name__)
 
 API = "https://api.telegram.org/bot{token}/sendMessage"
 SENT_FILE = ALERTS_DIR / "telegram_sent_weeks.txt"
 TOP_N = 5
+MAX_FORECAST_LINES = 5
+MAX_FORECAST_AGE_DAYS = 21     # forecasts based on data older than this vs the cases week are flagged as stale
 
 
 class AlertError(Exception):
@@ -55,7 +61,32 @@ def _signed(v: Any) -> str:
     return f"{int(v):+d}"
 
 
-def build_message(week: str, df: pd.DataFrame, top_n: int = TOP_N) -> str:
+def forecast_lines(fc: pd.DataFrame, cases_week_start: pd.Timestamp | None = None) -> list[str]:
+    """Regions at 'watch' or 'high' in the next 2 or 4 weeks; otherwise the closest one."""
+    if fc is None or fc.empty:
+        return []
+    based_on = pd.Timestamp(fc["base_week_end"].iloc[0])
+    lines = ["", f"<b>Forecast</b> (model v{html.escape(str(fc['model_version'].iloc[0]))}, "
+                 f"case data to {based_on:%d %b})"]
+    if cases_week_start is not None and (cases_week_start - based_on).days > MAX_FORECAST_AGE_DAYS:
+        return lines + [f"⚠️ Forecast is stale (data only to {based_on:%d %b %Y}) - not shown. Re-run the pipeline."]
+    flagged = fc[fc["risk_2w"].isin(["high", "watch"]) | fc["risk_4w"].isin(["high", "watch"])]
+    for r in flagged.head(MAX_FORECAST_LINES).to_dict("records"):
+        h = 2 if r["risk_2w"] in ("high", "watch") else 4
+        level = "HIGH" if r[f"risk_{h}w"] == "high" else "watch"
+        lines.append(f"⚠️ {html.escape(str(r['rdhs']).replace('_', ' ').title())}: ~{r[f'pred_{h}w']:,.0f} cases "
+                     f"in {h} wks (outbreak level {r[f'level_{h}w']:,.0f}) - {level}")
+    if flagged.empty:
+        lines.append("No region is forecast near its outbreak level in the next 4 weeks.")
+        with_level = fc[fc["level_4w"].notna()]
+        if not with_level.empty:
+            top = with_level.assign(ratio=with_level["pred_4w"] / with_level["level_4w"]).nlargest(1, "ratio").iloc[0]
+            lines.append(f"Closest: {html.escape(str(top['rdhs']).replace('_', ' ').title())} "
+                         f"~{top['pred_4w']:,.0f} vs level {top['level_4w']:,.0f} ({top['ratio']:.0%}) in 4 wks")
+    return lines
+
+
+def build_message(week: str, df: pd.DataFrame, top_n: int = TOP_N, forecast: pd.DataFrame | None = None) -> str:
     """Plain, phone-friendly HTML message. Honest wording: highest CASES (not a forecast yet)."""
     start = pd.Timestamp(df["week_start"].iloc[0])
     end = start + pd.Timedelta(days=6)
@@ -85,7 +116,11 @@ def build_message(week: str, df: pd.DataFrame, top_n: int = TOP_N) -> str:
         if top_rise["change"] > 0:
             lines += ["", f"Biggest rise: {pretty(top_rise['district'])} {_signed(top_rise['change'])}"]
 
-    lines += ["", "<i>Source: NDCU weekly update. Portfolio project - not official health advice.</i>"]
+    lines += forecast_lines(forecast, start) if forecast is not None else []
+    has_forecast = forecast is not None and not forecast.empty
+    source = "NDCU weekly update" + ("; forecast: DengueWatch model (WER + NDCU cases, Open-Meteo weather)"
+                                     if has_forecast else "")
+    lines += ["", f"<i>Source: {source}. Portfolio project - not official health advice.</i>"]
     return "\n".join(lines)
 
 
@@ -117,7 +152,8 @@ def main() -> None:
 
     with duckdb.connect(str(DB_PATH), read_only=True) as con:
         week, df = latest_week(con)
-    text = build_message(week, df)
+        fc = latest_forecast(con)
+    text = build_message(week, df, forecast=fc)
 
     if args.dry_run:
         print(text)
