@@ -35,3 +35,25 @@ The Sri Lankan studies don't agree on a single rainfall lag, so the model gets 0
 - No population data yet, so the table uses case counts, not rates per 100,000.
 - 2026 WER weeks are Mon→Sun, so `week` numbers there are ISO weeks. The endemic channel compares week N with week N and ignores that one-to-two-day shift.
 - Reporting delay isn't modelled yet: WER publishes a week's cases after that week ends.
+
+## Backtest results (walk-forward, test years 2014–2025, 26 regions, 16,250 region-weeks)
+
+The model predicts **growth**: log(cases in h weeks + 1) − log(recent 4-week level + 1). Case features are log ratios to that level, so one model fits big and small regions. See `src/ml/models.py`.
+
+| Model | h=2 MAE | h=2 skill vs naive | h=4 MAE | h=4 skill vs naive |
+|---|---|---|---|---|
+| Last value (naive) | 15.49 | 0 | 21.62 | 0 |
+| Mean of last 4 weeks | 18.08 | −17% | 23.71 | −10% |
+| Same week last year | 42.31 | −173% | 42.39 | −96% |
+| LightGBM, no weather | 15.16 | +2.1% | 19.51 | +9.7% |
+| **LightGBM + weather** | **14.97** | **+3.4%** | **18.97** | **+12.3%** |
+
+What this shows:
+- Recent cases are the strongest signal. At 2 weeks, "same as this week" is hard to beat.
+- **Weather adds the most at 4 weeks** (+2.6 points of skill over the no-weather model).
+- At h=4, **rain 12–15 weeks earlier** is the second-highest feature by gain (≈10%). That's close to the 3-month lag in Withanage et al. 2018. Gain shows what the model uses, not what causes cases.
+- Outbreak calls: LightGBM is more **precise** (fewer false alarms: 0.83 vs 0.71 at h=2) but catches fewer outbreak weeks (recall 0.66 vs 0.74).
+
+Known issue: the current outbreak rule (5-year mean + 2 SD) marks ~17% of weeks as outbreaks, which is too many to be useful as an alert. To revisit before alerts use the forecast.
+
+Reproduce: `python -m src.ml.backtest`. Every number above is a run in the MLflow experiment `denguewatch-forecast`.

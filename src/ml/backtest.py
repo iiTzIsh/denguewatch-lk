@@ -10,8 +10,11 @@ Every model x horizon becomes one MLflow run: params, metrics, per-year MAE char
 predictions file as an artifact, so any number in the README can be traced back to a run.
 
 Run:  docker compose up -d mlflow           (once; UI at http://localhost:5000)
-      python -m src.ml.backtest             (all baselines, h = 2 and 4)
-      python -m src.ml.backtest --models seasonal_naive --horizons 2
+      python -m src.ml.backtest             (baselines + LightGBM, h = 2 and 4)
+      python -m src.ml.backtest --models lgbm_growth --horizons 4
+
+Every run also logs "skill_vs_naive" = 1 - MAE(model) / MAE(last value) on the same rows:
+> 0 means the model beats "same as this week"; that is the bar for deploying anything.
 """
 from __future__ import annotations
 
@@ -27,7 +30,7 @@ import pandas as pd
 from src.config import MLFLOW_EXPERIMENT, MLFLOW_TRACKING_URI
 from src.log_setup import setup_logging
 from src.ml.features import HORIZONS, TARGETS, THRESHOLDS, load_features
-from src.ml.models import BASELINES, Forecaster
+from src.ml.models import BASELINES, MODELS, Forecaster, LastValue, LightGBMGrowth
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +83,15 @@ def by_year(pred: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame([{"year": y, **score(g)} for y, g in pred.groupby("year")])
 
 
+def skill_vs_naive(pred: pd.DataFrame, df: pd.DataFrame, horizon: int, test_years: list[int]) -> float:
+    naive = walk_forward(df, LastValue(), horizon, test_years)
+    return 1 - float((pred["y_pred"] - pred["y_true"]).abs().mean()) / float(
+        (naive["y_pred"] - naive["y_true"]).abs().mean())
+
+
 def log_run(pred: pd.DataFrame, model: Forecaster, horizon: int, df: pd.DataFrame, test_years: list[int]) -> dict:
     overall = score(pred)
+    overall["skill_vs_naive"] = skill_vs_naive(pred, df, horizon, test_years)
     yearly = by_year(pred)
     with mlflow.start_run(run_name=f"{model.name}_h{horizon}"):
         mlflow.set_tags({"model_family": "baseline" if model.name in BASELINES else "ml",
@@ -91,6 +101,9 @@ def log_run(pred: pd.DataFrame, model: Forecaster, horizon: int, df: pd.DataFram
             "test_years": f"{test_years[0]}-{test_years[-1]}",
             "data_rows": len(df), "data_last_week": str(df["week_start"].max().date()),
         })
+        if isinstance(model, LightGBMGrowth):
+            mlflow.log_params({f"lgbm_{k}": v for k, v in model.params.items()})
+            mlflow.log_param("use_weather", model.use_weather)
         mlflow.log_metrics(overall)
         y2017 = yearly.loc[yearly["year"] == 2017]
         if not y2017.empty:
@@ -101,13 +114,15 @@ def log_run(pred: pd.DataFrame, model: Forecaster, horizon: int, df: pd.DataFram
         with tempfile.TemporaryDirectory() as tmp:
             pred.to_csv(Path(tmp) / "backtest_predictions.csv", index=False)
             yearly.to_csv(Path(tmp) / "backtest_by_year.csv", index=False)
+            if isinstance(model, LightGBMGrowth):     # from the last fold (trained on the most data)
+                model.feature_importance().to_csv(Path(tmp) / "feature_importance_last_fold.csv", index=False)
             mlflow.log_artifacts(tmp, artifact_path="backtest")
     return overall
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--models", default=",".join(BASELINES), help=f"comma list from {list(BASELINES)}")
+    parser.add_argument("--models", default=",".join(MODELS), help=f"comma list from {list(MODELS)}")
     parser.add_argument("--horizons", default=",".join(map(str, HORIZONS)))
     args = parser.parse_args()
 
@@ -120,11 +135,12 @@ def main() -> None:
     rows = []
     for h in map(int, args.horizons.split(",")):
         for name in args.models.split(","):
-            model = BASELINES[name]()
+            model = MODELS[name]()
             pred = walk_forward(df, model, h, TEST_YEARS)
             m = log_run(pred, model, h, df, TEST_YEARS)
             rows.append({"model": name, "h": h, **{k: round(v, 3) for k, v in m.items()}})
-            logger.info("%s h=%d  MAE=%.2f  outbreak recall=%.2f", name, h, m["mae"], m["outbreak_recall"])
+            logger.info("%s h=%d  MAE=%.2f  skill vs naive=%+.1f%%  outbreak recall=%.2f",
+                        name, h, m["mae"], 100 * m["skill_vs_naive"], m["outbreak_recall"])
     print(pd.DataFrame(rows).to_string(index=False))
     print(f"\nOpen {MLFLOW_TRACKING_URI} -> experiment '{MLFLOW_EXPERIMENT}' to compare runs.")
 

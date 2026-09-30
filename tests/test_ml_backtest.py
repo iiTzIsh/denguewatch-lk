@@ -96,3 +96,56 @@ def test_log_run_writes_mlflow_run(tmp_path):
     assert len(runs) == 1
     assert runs.loc[0, "params.model"] == "naive_last_value"
     assert runs.loc[0, "metrics.mae"] >= 0
+
+
+# ---------------- LightGBM ----------------
+from src.ml.features import WEATHER_COLS, model_matrix  # noqa: E402
+from src.ml.models import MODELS, LightGBMGrowth  # noqa: E402
+
+
+def full_features() -> pd.DataFrame:
+    """make_features() + every column the ML model reads (random but deterministic)."""
+    df = make_features()
+    rng = np.random.default_rng(0)
+    g = df.groupby("rdhs")["cases"]
+    for k in (1, 2, 3, 4):
+        df[f"cases_lag{k}"] = g.shift(k)
+    df["cases_mean_8w"] = g.transform(lambda s: s.rolling(8).mean())
+    df["cases_same_week_last_year"] = g.shift(52)
+    df["endemic_mean_5y"] = df["cases"] * 0.9
+    df["endemic_sd_5y"] = 3.0
+    df["month"] = df["week_end"].dt.month
+    for c in WEATHER_COLS:
+        df[c] = rng.gamma(2.0, 10.0, len(df))
+    return df
+
+
+def test_model_matrix_has_no_target_columns():
+    cols = model_matrix(full_features()).columns
+    assert not [c for c in cols if "target" in c]
+
+
+def test_model_matrix_without_weather_drops_weather():
+    cols = set(model_matrix(full_features(), use_weather=False).columns)
+    assert cols.isdisjoint(WEATHER_COLS)
+
+
+@pytest.mark.parametrize("use_weather", [True, False])
+def test_lightgbm_fits_and_predicts_positive_counts(use_weather):
+    df = full_features()
+    df = df[df["target_cases_h2"].notna()]
+    model = LightGBMGrowth(use_weather=use_weather, params={"n_estimators": 20}).fit(df[df.year < 2014], 2)
+    pred = model.predict(df[df.year == 2014])
+    assert len(pred) == (df.year == 2014).sum()
+    assert np.isfinite(pred).all() and (pred >= -1).all()
+    assert not model.feature_importance().empty
+
+
+def test_all_registered_models_run_in_backtest():
+    df = full_features()
+    for name, factory in MODELS.items():
+        model = factory()
+        if isinstance(model, LightGBMGrowth):
+            model.params["n_estimators"] = 10
+        pred = backtest.walk_forward(df, model, 2, [2014])
+        assert len(pred) > 0, name

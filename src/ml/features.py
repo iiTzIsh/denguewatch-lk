@@ -1,12 +1,13 @@
 """
 Read the ML feature table (gold.mart_ml_features, built by dbt) into pandas.
 
-The SQL does the heavy lifting (lags, weather windows, targets). Here we only add the
-seasonal-naive reference for the TARGET week, which needs a lookup across rows.
+The SQL does the heavy lifting (lags, weather windows, targets). Here we add the seasonal-naive
+reference for the TARGET week (a lookup across rows) and build the scale-free model matrix.
 """
 from __future__ import annotations
 
 import duckdb
+import numpy as np
 import pandas as pd
 
 from src.config import DB_PATH
@@ -14,18 +15,6 @@ from src.config import DB_PATH
 HORIZONS = (2, 4)
 TARGETS = {h: f"target_cases_h{h}" for h in HORIZONS}
 THRESHOLDS = {h: f"target_threshold_h{h}" for h in HORIZONS}
-
-# Everything the model is allowed to see (all known at week_end)
-FEATURES = [
-    "cases", "cases_lag1", "cases_lag2", "cases_lag3", "cases_lag4",
-    "cases_mean_4w", "cases_mean_8w", "cases_same_week_last_year",
-    "endemic_mean_5y", "endemic_sd_5y",
-    "rain_w0_mm", "rain_w1_mm", "rain_w2_mm", "rain_w3_mm",
-    "rain_w4_7_mm", "rain_w8_11_mm", "rain_w12_15_mm",
-    "rainy_days_4w", "temp_mean_4w_c", "temp_min_4w_c",
-    "month", "rdhs",
-]
-CATEGORICAL = ["rdhs"]
 
 
 def load_features(db_path: str | None = None) -> pd.DataFrame:
@@ -53,3 +42,42 @@ def seasonal_reference(df: pd.DataFrame, horizon: int) -> pd.Series:
         on="ref_end", by="rdhs", direction="nearest", tolerance=pd.Timedelta(days=3),
     )
     return merged.sort_values("_row")["ref_cases"].set_axis(df.index)
+
+
+# ---------------------------------------------------------------------------------------------
+# Scale-free features for the ML model.
+# Colombo has hundreds of cases a week, Mannar a handful. If the model sees raw counts it learns
+# "which region is this", not "is dengue rising". So case features are expressed RELATIVE to the
+# region's recent level (log ratios), and the model predicts the GROWTH from that level.
+# ---------------------------------------------------------------------------------------------
+CASE_COLS_REL = [
+    "cases", "cases_lag1", "cases_lag2", "cases_lag3", "cases_lag4",
+    "cases_mean_8w", "cases_same_week_last_year", "endemic_mean_5y",
+]
+WEATHER_COLS = [
+    "rain_w0_mm", "rain_w1_mm", "rain_w2_mm", "rain_w3_mm",
+    "rain_w4_7_mm", "rain_w8_11_mm", "rain_w12_15_mm",
+    "rainy_days_4w", "temp_mean_4w_c", "temp_min_4w_c",
+]
+
+
+def base_level(df: pd.DataFrame) -> pd.Series:
+    """The region's recent level: mean of the last 4 weeks (this week's cases if not available)."""
+    return df["cases_mean_4w"].fillna(df["cases"]).astype(float)
+
+
+def model_matrix(df: pd.DataFrame, use_weather: bool = True) -> pd.DataFrame:
+    """Feature matrix for the ML model. Uses only columns known at week_end (no target columns)."""
+    lvl = np.log1p(base_level(df))
+    out = pd.DataFrame(index=df.index)
+    out["log_level"] = lvl
+    for c in CASE_COLS_REL:
+        out[f"rel_{c}"] = np.log1p(df[c].astype(float)) - lvl
+    for h in HORIZONS:
+        out[f"rel_seasonal_naive_h{h}"] = np.log1p(df[f"seasonal_naive_h{h}"].astype(float)) - lvl
+    out["endemic_z"] = (df["cases"] - df["endemic_mean_5y"]) / (df["endemic_sd_5y"] + 1)
+    out["month"] = df["month"]
+    if use_weather:
+        for c in WEATHER_COLS:
+            out[c] = df[c]
+    return out
