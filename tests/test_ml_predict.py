@@ -110,3 +110,28 @@ def test_alert_hides_stale_forecast():
     old_cases_week = CASES.assign(week_start=pd.Timestamp("2026-09-07"))      # forecast data ends 17 May
     msg = tg.build_message("2026-W37", old_cases_week, forecast=wide("high", 900.0))
     assert "Forecast is stale" in msg and "⚠️ Colombo" not in msg
+
+
+def test_check_server_fails_fast(monkeypatch):
+    import requests
+
+    def refused(url, timeout):
+        raise requests.ConnectionError("refused")
+
+    monkeypatch.setattr(predict.requests, "get", refused)
+    with pytest.raises(predict.MlflowUnreachable):
+        predict.check_server("http://localhost:5000")
+    predict.check_server("sqlite:///mlflow.db")          # non-HTTP stores are not pinged
+
+
+def test_soft_mode_is_fast_when_mlflow_down(monkeypatch):
+    import time
+
+    import requests
+    monkeypatch.setattr(predict.requests, "get",
+                        lambda url, timeout: (_ for _ in ()).throw(requests.ConnectionError("refused")))
+    monkeypatch.setattr(predict, "MLFLOW_TRACKING_URI", "http://localhost:5000")
+    monkeypatch.setattr("sys.argv", ["predict", "--soft"])
+    t0 = time.perf_counter()
+    assert predict.main() == 0
+    assert time.perf_counter() - t0 < 5

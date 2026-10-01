@@ -53,3 +53,9 @@ def test_loader_with_and_without_csv(tmp_path):
     bp.validate(bp.parse_lines(table_lines())).to_csv(csv, index=False)
     assert duckdb_load.load_population(con, csv) == 25
     assert con.execute("SELECT sum(population) FROM district_population").fetchone()[0] == 21_781_800
+
+
+def test_census_spelling_moneragala_and_toc_ignored():
+    lines = [ln.replace("Monaragala", "Moneragala") for ln in table_lines()]
+    df = bp.validate(bp.parse_lines(lines))
+    assert "monaragala" in set(df["district"])

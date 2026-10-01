@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 
 import duckdb
 import pandas as pd
+import requests
 
 from src.config import DB_PATH, MLFLOW_TRACKING_URI
 from src.log_setup import setup_logging
@@ -101,7 +102,25 @@ def write(con: duckdb.DuckDBPyConnection, forecasts: pd.DataFrame) -> int:
     return len(forecasts)
 
 
+class MlflowUnreachable(Exception):
+    pass
+
+
+def check_server(uri: str | None = None, timeout_s: float = 3.0) -> None:
+    """Fail in seconds if the tracking server is down. (MLflow's own client retries with backoff for ~5 min.)"""
+    uri = uri or MLFLOW_TRACKING_URI
+    if not uri.startswith(("http://", "https://")):
+        return                                          # local file/sqlite store or Databricks: nothing to ping
+    try:
+        resp = requests.get(uri.rstrip("/") + "/health", timeout=timeout_s)
+    except requests.RequestException as exc:
+        raise MlflowUnreachable(f"no MLflow server at {uri} ({type(exc).__name__})") from exc
+    if resp.status_code != 200:
+        raise MlflowUnreachable(f"MLflow at {uri} answered HTTP {resp.status_code}")
+
+
 def load_champion():  # noqa: ANN201 - mlflow types only exist when mlflow is installed
+    check_server()
     import mlflow
     from mlflow import MlflowClient
 

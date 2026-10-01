@@ -136,6 +136,7 @@ docs/            data model, source notes, design decisions
 | Source | Use | Notes |
 |---|---|---|
 | [Open-Meteo](https://open-meteo.com/) | Daily rainfall & temperature (ERA5, era5_seamless) | Free archive API, no key · CC BY 4.0 |
+| [Census of Population and Housing 2024](https://www.statistics.gov.lk/Resource/en/Population/CPH_2024/CPH2024_Final_Eng.pdf) | District population → cases per 100,000 | Dept. of Census and Statistics, Final Report (10 Apr 2026), Table 3.2. Read from the PDF and checked against the printed totals |
 | [geoBoundaries](https://github.com/wmgeolab/geoBoundaries) | District boundaries → centroids | gbOpen LKA ADM2, from OpenStreetMap · ODbL 1.0 |
 | [Epidemiology Unit – WER](https://www.epid.gov.lk/weekly-epidemiological-report) | Original WER PDFs | Our scraper is ready; site returning HTTP 500 since 28 Sep 2026 |
 | [NDCU](https://www.dengue.health.gov.lk/) | Weekly cases per RDHS (2026) | Weekly update PDFs, parsed + validated against printed totals; also the live case feed for forecasts after the WER history ends |

@@ -34,7 +34,7 @@ The Sri Lankan studies don't agree on a single rainfall lag, so the model gets 0
 ## Known limits
 
 - Region names map to districts, so Kalmunai uses Ampara district weather.
-- No population data yet, so the table uses case counts, not rates per 100,000.
+- The model uses case counts. Census 2024 population exists per **district** (used for the dashboard's per-100,000 rates), but not per RDHS region, so the forecasts stay in counts.
 - 2026 WER weeks are Mon→Sun, so `week` numbers there are ISO weeks. The endemic channel compares week N with week N and ignores that one-to-two-day shift.
 - Reporting delay isn't modelled yet: WER publishes a week's cases after that week ends.
 - WER → NDCU switch: in the 3 overlapping 2026 weeks, NDCU weekly counts are 5–11% higher than WER (the 2025 cumulative differs by 2–3.5%). Values are kept as published and tagged in `case_source`, never rescaled.

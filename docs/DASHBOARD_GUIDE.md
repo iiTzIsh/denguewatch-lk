@@ -1,6 +1,7 @@
 # DengueWatch LK: Dashboard Guide
 
 How to read the dashboard, where every number comes from, and how to use it each week.
+For the alert, API, Airflow, MLflow and the rest, see [SYSTEM_GUIDE.md](SYSTEM_GUIDE.md).
 
 > Numbers and screenshots below are from the real data on **30 Sep 2026** (dengue data up to 13 Sep, weather up to 24 Sep).
 > This is a portfolio project, not official health advice.
@@ -84,7 +85,7 @@ streamlit run dashboard/app.py          # opens http://localhost:8501
 - Each district is shaded **light → dark blue** by its cases that week. Grey = no data.
 - **Hover** over a district to see: cases this week, change vs last week, and rain 2 weeks earlier.
 - ⚠️ **The colours are relative to that week.** The darkest blue is always the week's highest district. A dark district in a quiet week may have fewer cases than a light one in a peak week, so compare numbers, not colours, across weeks.
-- ⚠️ The map shows **cases, not cases per person**. Big-population districts (Colombo, Gampaha) will always look darker. Population data isn't added yet.
+- **Show: Cases / Cases per 100,000 people** (toggle above the map). Raw cases make big districts (Colombo, Gampaha) look worst. Per 100,000 uses the official **Census 2024** population, so districts are compared fairly. Example, W37: Gampaha has the most cases (218), but **Kandy has the highest rate (11.9 per 100,000)**.
 
 ### 3.4 Top 10 districts
 
@@ -211,7 +212,7 @@ Every Monday after the pipeline has run:
 
 ## 6. Don't misread these
 
-- **Counts, not rates.** Big districts always have more cases. Per-100,000 rates come when population data is added.
+- **Counts vs rates.** Big districts always have more cases. Use the **per 100,000** toggle to compare districts fairly. The forecast table stays in counts per health region, because the census gives districts, not RDHS regions.
 - **Map colours are relative to each week.** Compare numbers across weeks, not colours.
 - **Missing NDCU weeks** show as straight lines on charts, not real data.
 - **The forecast is uncertain.** It's good at seeing **declines** and **continuing trends**, and **slow at the start of a new rise**. In the 2014–2025 backtest, 2-week "Watch" warnings were right about 73% of the time.

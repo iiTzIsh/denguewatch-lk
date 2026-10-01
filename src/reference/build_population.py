@@ -49,18 +49,15 @@ def district_names() -> dict[str, str]:
     d = pd.read_csv(REFERENCE_DIR / "districts.csv")
     out = {re.sub(r"[^a-z]", "", n.lower()): code for code, n in zip(d["district"], d["district_name"], strict=True)}
     out["nuwaraeliya"] = "nuwara_eliya"
+    out["moneragala"] = "monaragala"          # the census spells it "Moneragala"
     return out
 
 
 def find_table_pages(pdf: pdfplumber.PDF) -> list[int]:
-    """Pages that hold Table 3.2 (the title, plus the next page in case the table continues)."""
-    hits = [i for i, p in enumerate(pdf.pages)
-            if re.search(r"Table\s*3\.2\b", p.extract_text() or "")
-            and "District" in (p.extract_text() or "")]
-    pages: list[int] = []
-    for i in hits:
-        pages += [i, i + 1]
-    return sorted({p for p in pages if p < len(pdf.pages)})
+    """The page with the Table 3.2 TITLE (not the table-of-contents line "Table 3.2 ....... 51").
+    Only that page: the next page holds Table 3.3 (1981-2024 history), whose first number is from 1981."""
+    title = re.compile(r"^\s*Table\s*3\.2\s*:.*District.*2024\s*$", re.MULTILINE)
+    return [i for i, p in enumerate(pdf.pages) if title.search(p.extract_text() or "")]
 
 
 def parse_lines(lines: list[str]) -> dict[str, int]:
