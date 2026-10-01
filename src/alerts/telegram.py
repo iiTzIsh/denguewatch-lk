@@ -48,7 +48,7 @@ def latest_week(con: duckdb.DuckDBPyConnection) -> tuple[str, pd.DataFrame]:
     if week is None:
         raise AlertError("No NDCU weeks in the warehouse - run the pipeline first")
     df = con.execute(
-        """SELECT district, cases, cases_change_vs_prev_week AS change, week_start
+        """SELECT district, cases, cases_change_vs_prev_week AS change, week_start, cases_per_100k
            FROM gold.mart_ndcu_monitoring WHERE iso_week_key = ? ORDER BY cases DESC""",
         [week],
     ).df()
@@ -115,6 +115,12 @@ def build_message(week: str, df: pd.DataFrame, top_n: int = TOP_N, forecast: pd.
         top_rise = max(with_change, key=lambda r: r["change"])
         if top_rise["change"] > 0:
             lines += ["", f"Biggest rise: {pretty(top_rise['district'])} {_signed(top_rise['change'])}"]
+
+    rated = [r for r in rows if r.get("cases_per_100k") is not None and r["cases_per_100k"] == r["cases_per_100k"]]
+    if rated:
+        top_rate = max(rated, key=lambda r: r["cases_per_100k"])
+        lines.append(f"Highest rate: {pretty(top_rate['district'])} "
+                     f"{top_rate['cases_per_100k']:.1f} per 100,000 people")
 
     lines += forecast_lines(forecast, start) if forecast is not None else []
     has_forecast = forecast is not None and not forecast.empty

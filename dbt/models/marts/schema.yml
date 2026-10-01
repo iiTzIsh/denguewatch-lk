@@ -114,11 +114,22 @@ models:
               arguments: {min_value: 0}
 
   - name: mart_ndcu_monitoring
-    description: District x ISO week monitoring view - cases, change vs last week, weather and 1-4 week rainfall lags.
+    description: >
+      District x ISO week monitoring view - cases, cases per 100,000 (Census 2024), change vs last week,
+      weather and 1-4 week rainfall lags.
     data_tests:
       - unique_combination:
           arguments:
             columns: [district_sk, iso_week_key]
+    columns:
+      - name: cases_per_100k
+        data_tests:
+          - in_range:
+              arguments: {min_value: 0}
+      - name: population
+        data_tests:
+          - in_range:
+              arguments: {min_value: 1}
 
   - name: fact_dengue_wer_weekly
     description: WER dengue history (2007->2026) per RDHS per reported week - training data for the forecasting model.

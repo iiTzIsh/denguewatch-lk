@@ -75,3 +75,9 @@ def test_dotenv_loader_does_not_override(tmp_path, monkeypatch):
     assert os.environ["DW_TEST_A"] == "from_env"      # real env var wins
     assert os.environ["DW_TEST_B"] == "quoted"
     monkeypatch.delenv("DW_TEST_B")
+
+
+def test_message_shows_highest_rate_when_population_loaded():
+    df = DF.assign(cases_per_100k=[9.0, 8.0, 12.5, 6.0, 8.1, 6.4, 1.9])
+    assert "Highest rate: Kandy 12.5 per 100,000 people" in tg.build_message(WEEK, df)
+    assert "Highest rate" not in tg.build_message(WEEK, DF)          # no census loaded -> no line

@@ -134,23 +134,33 @@ k4.metric("Regions with revised numbers", "yes" if snap["any_restated"].any() el
           help="NDCU revises last week's count in the next report (delayed reports / duplicates).")
 
 # ---------- map + top table ----------
+has_rate = snap["cases_per_100k"].notna().any()
+measure = st.radio(
+    "Show", ["Cases", "Cases per 100,000 people"], horizontal=True, disabled=not has_rate,
+    help="Per 100,000 uses Census 2024 district population - fair comparison between big and small districts."
+    if has_rate else "Add Census 2024 population first: python -m src.reference.build_population",
+)
+value_col = "cases_per_100k" if measure != "Cases" else "cases"
+value_label = "Cases per 100,000 this week" if value_col == "cases_per_100k" else "Cases this week"
+
 left, right = st.columns([3, 2])
 with left:
-    st.subheader(f"Cases by district - {week}")
+    st.subheader(f"{'Cases per 100,000' if value_col == 'cases_per_100k' else 'Cases'} by district - {week}")
     geo = copy.deepcopy(load_geojson())
     by_d = snap.set_index("district")
-    vmax = max(float(snap["cases"].max()), 1.0)
+    vmax = max(float(snap[value_col].max()), 1.0)
     colormap = cm.StepColormap(
         BLUE_RAMP, vmin=0, vmax=vmax,
         index=[vmax * i / len(BLUE_RAMP) for i in range(len(BLUE_RAMP) + 1)],
-        caption="Cases this week",
+        caption=value_label,
     )
     for feat in geo["features"]:
         d = feat["properties"]["district"]
         row = by_d.loc[d] if d in by_d.index else None
         p = feat["properties"]
-        p["cases"] = None if row is None else int(row["cases"])
-        p["cases_txt"] = fmt(p["cases"])
+        p["value"] = None if row is None or pd.isna(row[value_col]) else float(row[value_col])
+        p["cases_txt"] = "-" if row is None else fmt(row["cases"])
+        p["rate_txt"] = "-" if row is None or pd.isna(row["cases_per_100k"]) else f"{row['cases_per_100k']:.1f}"
         p["change_txt"] = "-" if row is None else fmt(row["change_vs_prev_week"])
         p["rain_txt"] = "-" if row is None else fmt(row["rain_lag2_mm"], " mm")
 
@@ -158,27 +168,31 @@ with left:
     folium.GeoJson(
         geo,
         style_function=lambda f: {
-            "fillColor": NO_DATA if f["properties"]["cases"] is None else colormap(f["properties"]["cases"]),
+            "fillColor": NO_DATA if f["properties"]["value"] is None else colormap(f["properties"]["value"]),
             "color": "#ffffff", "weight": 1.5, "fillOpacity": 0.85,
         },
         highlight_function=lambda f: {"weight": 3, "color": "#0b0b0b"},
         tooltip=folium.GeoJsonTooltip(
-            fields=["district_name", "cases_txt", "change_txt", "rain_txt"],
-            aliases=["District", "Cases this week", "Change vs last week", "Rain 2 weeks earlier"],
+            fields=["district_name", "cases_txt", "rate_txt", "change_txt", "rain_txt"],
+            aliases=["District", "Cases this week", "Per 100,000 people", "Change vs last week",
+                     "Rain 2 weeks earlier"],
         ),
     ).add_to(m)
     colormap.add_to(m)
     st_folium(m, height=560, use_container_width=True, returned_objects=[])
 
 with right:
-    st.subheader("Top 10 districts")
-    top10 = snap.head(10)[["district", "province", "cases", "change_vs_prev_week", "rain_lag2_mm"]].copy()
+    st.subheader("Top 10 districts" + (" (per 100,000)" if value_col == "cases_per_100k" else ""))
+    top10 = (snap.sort_values(value_col, ascending=False).head(10)
+             [["district", "province", "cases", "cases_per_100k", "change_vs_prev_week", "rain_lag2_mm"]].copy())
     top10["district"] = top10["district"].str.replace("_", " ").str.title()
     st.dataframe(
         top10, hide_index=True, width="stretch",
         column_config={
             "district": "District", "province": "Province",
             "cases": st.column_config.NumberColumn("Cases", format="%d"),
+            "cases_per_100k": st.column_config.NumberColumn("Per 100k", format="%.1f",
+                                                            help="Cases per 100,000 people (Census 2024)"),
             "change_vs_prev_week": st.column_config.NumberColumn("vs last week", format="%+d"),
             "rain_lag2_mm": st.column_config.NumberColumn("Rain 2 wk earlier (mm)", format="%.0f"),
         },
@@ -324,6 +338,7 @@ with st.expander(f"All 25 districts - {week} (table)"):
 
 st.caption(
     "Sources: dengue cases - National Dengue Control Unit weekly updates (parsed + validated against printed totals) · "
-    "weather - Open-Meteo (ERA5 reanalysis, CC BY 4.0) · boundaries - geoBoundaries / OpenStreetMap (ODbL). "
+    "weather - Open-Meteo (ERA5 reanalysis, CC BY 4.0) · boundaries - geoBoundaries / OpenStreetMap (ODbL) · "
+    "population - Census of Population and Housing 2024, Department of Census and Statistics. "
     "Code: github.com/iiTzIsh/denguewatch-lk"
 )

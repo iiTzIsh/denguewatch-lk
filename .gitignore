@@ -9,3 +9,4 @@ logs/
 mlflow/
 mlruns/
 mlartifacts/
+reference/population/*.pdf

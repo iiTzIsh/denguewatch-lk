@@ -15,6 +15,8 @@ sources:
         description: 26 RDHS regions (25 districts, Ampara split into Ampara + Kalmunai) -> district
       - name: ndcu_weekly_cases
         description: Parsed NDCU weekly update PDFs. ISO weeks (Monday -> Sunday), one row per RDHS per week.
+      - name: district_population
+        description: Census 2024 population per district (reference/population/, read from the official report)
       - name: wer_weekly_cases
         description: >
           WER dengue history 2007->2026 per RDHS, from the denguedatahub R package (pinned commit), itself extracted

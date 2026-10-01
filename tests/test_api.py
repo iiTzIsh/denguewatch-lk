@@ -23,6 +23,11 @@ def client(tmp_path, monkeypatch):
         ('kandy','Central','2026-W37',DATE '2026-09-07',174,16,true,20.0,NULL,5.0)
       ) t(district, province, iso_week_key, week_start, cases, cases_change_vs_prev_week, any_restated,
           rainfall_mm_total, rain_lag2_mm, rain_lag4_mm)""")
+    con.execute("ALTER TABLE gold.mart_ndcu_monitoring ADD COLUMN population BIGINT")
+    con.execute("ALTER TABLE gold.mart_ndcu_monitoring ADD COLUMN cases_per_100k DOUBLE")
+    con.execute("UPDATE gold.mart_ndcu_monitoring SET population = CASE district WHEN 'colombo' THEN 2000000 "
+              "ELSE 1000000 END")
+    con.execute("UPDATE gold.mart_ndcu_monitoring SET cases_per_100k = round(cases * 100000.0 / population, 1)")
     con.execute("""CREATE TABLE gold.dim_district AS SELECT * FROM (VALUES
         ('-1','unknown','Unknown','Unknown',NULL,NULL),
         ('a','colombo','Colombo','Western',6.87,80.02), ('b','kandy','Kandy','Central',7.27,80.71)
@@ -84,3 +89,8 @@ def test_forecast_endpoint(client, tmp_path):
 def test_model_health_empty(client):
     body = client.get("/model/health").json()
     assert body == {"performance": [], "drift": None}
+
+
+def test_hotspots_include_rate(client):
+    body = client.get("/hotspots").json()
+    assert body["districts"][0]["cases_per_100k"] == 10.4   # 207 per 2,000,000 = 10.35 -> rounded

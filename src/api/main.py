@@ -45,6 +45,7 @@ class Hotspot(BaseModel):
     district: str
     province: str
     cases: int
+    cases_per_100k: float | None          # Census 2024 population; null until loaded
     change_vs_prev_week: int | None
     rain_2wk_earlier_mm: float | None
 
@@ -172,6 +173,7 @@ def hotspots(
             district=str(r["district"]),
             province=str(r["province"]),
             cases=int(r["cases"]),
+            cases_per_100k=_none_if_nan(r["cases_per_100k"]),
             change_vs_prev_week=None if _none_if_nan(r["change_vs_prev_week"]) is None
             else int(r["change_vs_prev_week"]),
             rain_2wk_earlier_mm=_none_if_nan(r["rain_lag2_mm"]),

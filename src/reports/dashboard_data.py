@@ -26,7 +26,7 @@ def week_snapshot(con: duckdb.DuckDBPyConnection, week: str) -> pd.DataFrame:
     """One row per district for the chosen week."""
     return con.execute(
         """
-        SELECT district, province, iso_week_key, week_start, cases,
+        SELECT district, province, iso_week_key, week_start, cases, population, cases_per_100k,
                cases_change_vs_prev_week AS change_vs_prev_week, any_restated,
                rainfall_mm_total AS rain_mm, rain_lag2_mm, rain_lag4_mm
         FROM gold.mart_ndcu_monitoring

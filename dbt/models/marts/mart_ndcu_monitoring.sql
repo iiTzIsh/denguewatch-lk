@@ -1,5 +1,5 @@
 -- GRAIN: one row per district per ISO week that NDCU reported.
--- Current dengue situation + this week's weather + rainfall 1-4 weeks EARLIER (breeding delay).
+-- Current dengue situation (+ cases per 100,000 people, Census 2024) + this week's weather + rainfall 1-4 weeks EARLIER (breeding delay).
 -- Lags are computed on the full weather history first, so they only ever look BACKWARDS (no leakage).
 with rain as (
     select
@@ -27,6 +27,8 @@ select
     c.iso_week_key,
     c.week_start,
     c.cases,
+    pop.population,
+    round(c.cases * 100000.0 / pop.population, 1)                       as cases_per_100k,   -- NULL until census loaded
     -- only compare with the week DIRECTLY before (NDCU skipped some weeks, e.g. 2026-W18 and W20)
     case when lag(c.week_start) over wc = c.week_start - 7
          then c.cases - lag(c.cases) over wc end                        as cases_change_vs_prev_week,
@@ -37,4 +39,5 @@ select
 from cases c
 join {{ ref('dim_district') }} dd using (district_sk)
 left join rain r on r.district_sk = c.district_sk and r.week_start = c.week_start
+left join {{ source('silver', 'district_population') }} pop on pop.district = dd.district
 window wc as (partition by c.district_sk order by c.week_start)

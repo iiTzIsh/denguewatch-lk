@@ -24,6 +24,28 @@ DISTRICTS_CSV = str(REFERENCE_DIR / "districts.csv")
 RDHS_CSV = str(REFERENCE_DIR / "rdhs.csv")
 NDCU_GLOB = str(PARSED_DIR / "ndcu_weekly" / "*.csv")
 WER_GLOB = str(PARSED_DIR / "wer_history" / "*.csv")
+POPULATION_CSV = REFERENCE_DIR / "population" / "district_population_2024.csv"
+
+POPULATION_DDL = """
+CREATE OR REPLACE TABLE district_population (
+    district VARCHAR, population BIGINT, census_year INTEGER, source VARCHAR
+)
+"""
+
+
+def load_population(con: duckdb.DuckDBPyConnection, csv_path: Path = POPULATION_CSV) -> int:
+    """Census 2024 district population (reference/population/). Table always exists; empty until the CSV is
+    built with `python -m src.reference.build_population` -> per-100k rates are then simply NULL."""
+    con.execute(POPULATION_DDL)
+    if not csv_path.exists():
+        logger.info("district_population: 0 rows (run python -m src.reference.build_population)")
+        return 0
+    con.execute("INSERT INTO district_population SELECT district, population, census_year, source "
+                "FROM read_csv(?, header = true)", [str(csv_path)])
+    row = con.execute("SELECT count(*) FROM district_population").fetchone()
+    n = row[0] if row else 0
+    logger.info("district_population: %d rows", n)
+    return n
 
 
 def load_reference(con: duckdb.DuckDBPyConnection, csv_path: str = DISTRICTS_CSV) -> int:
@@ -195,6 +217,7 @@ def main() -> None:
         build_weekly(con)
         load_ndcu(con)
         load_wer_history(con)
+        load_population(con)
         # empty ML tables so dbt sources + dashboard queries always exist (filled by src.ml.predict / monitor)
         con.execute(FORECAST_DDL)
         con.execute(DRIFT_DDL)
