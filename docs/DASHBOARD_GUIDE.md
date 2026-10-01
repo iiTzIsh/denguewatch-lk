@@ -80,7 +80,7 @@ Browser ──► web (nginx :3000) ──/api/*──► api (FastAPI :8000) �
 - ⚠️ The steps are recalculated each week from that week's values, so **compare numbers across weeks, not colours**.
 
 **National curve.** This shows all districts' cases per week in 2026: about 1,200 a week in April, a **peak of 7,891 in the week of 29 Jun**, then down to about 1,150. The selected week is marked.
-- **Gaps are weeks NDCU didn't publish** (e.g. W18, W20). The line breaks there instead of drawing a fake straight line.
+- **Gaps are weeks with no report loaded.** The line breaks there instead of drawing a fake straight line, and a week with no neighbour on either side shows as a dot.
 
 **Three facts under the curve:** the forecast summary (1 high, 3 watch in 4 weeks), the model's error vs the naive guess (47% lower) and the drift status. Each one links to its section.
 
@@ -205,9 +205,9 @@ Every Monday after the pipeline has run:
 
 - **Counts vs rates.** Big districts always have more cases, so use **Per 100,000 people** to compare. The forecast stays in counts per health region, because the census gives districts, not RDHS regions.
 - **Map colours are relative to each week.** Compare numbers across weeks, not colours.
-- **Gaps in the curves** are weeks NDCU didn't publish. They aren't zero cases.
+- **Gaps in the curves** are weeks with no report loaded. They aren't zero cases.
 - **The forecast is uncertain.** It's good at **declines** and **continuing trends**, and **slow at the start of a new rise**.
-- **Two case sources.** The model learned from WER history (to May 2026) and continues with NDCU. In the 3 weeks where both exist, NDCU is 5–11% higher. This is documented and not adjusted.
+- **Two case sources.** The model learned from WER history (to May 2026) and continues with NDCU. In the 20 weeks where both exist, weekly counts differ by −9% to +17% (+3.3% in total). This is documented and not adjusted.
 - **Not official advice.** For decisions, use the [National Dengue Control Unit](https://www.dengue.health.gov.lk/).
 
 ---

@@ -8,7 +8,7 @@ import duckdb
 import pandas as pd
 import pytest
 
-from src.transform.scd2 import apply_snapshot, ensure_table, observed_snapshots, snapshot_files
+from src.transform.scd2 import apply_snapshot, ensure_table, observed_snapshots, snapshot_files, sync
 
 # SYNTHETIC split scenario (tests/fixtures/moh_snapshots/README.md) - tests the mechanics only
 SNAPS = dict(snapshot_files(Path(__file__).parent / "fixtures" / "moh_snapshots"))
@@ -91,18 +91,20 @@ def test_area_off_the_high_risk_list_stays_current(con):
 
 
 def test_one_off_district_misprint_is_not_applied(con):
-    rows = [(W[0], "Katuwana", "hambantota"), (W[1], "Katuwana", "matara"), (W[2], "Katuwana", "hambantota")]
+    # two reports in a row are not enough (an early parser misread W19/W20 headings this way)
+    rows = [(W[0], "Katuwana", "hambantota"), (W[1], "Katuwana", "matara"), (W[2], "Katuwana", "matara"),
+            (W[3], "Katuwana", "hambantota")]
     for as_of, snap in observed_snapshots(obs(rows)):
         apply_snapshot(con, snap, as_of)
     assert con.execute("SELECT district FROM gold.dim_region").fetchall() == [("hambantota",)]   # one version
 
 
 def test_confirmed_district_change_creates_a_version(con):
-    rows = [(W[0], "X", "matara"), (W[1], "X", "galle"), (W[2], "X", "galle")]
+    rows = [(W[0], "X", "matara"), (W[1], "X", "galle"), (W[2], "X", "galle"), (W[3], "X", "galle")]
     for as_of, snap in observed_snapshots(obs(rows)):
         apply_snapshot(con, snap, as_of)
     hist = con.execute("SELECT district, valid_from, valid_to FROM gold.dim_region ORDER BY valid_from").fetchall()
-    assert hist == [("matara", W[0], W[2]), ("galle", W[2], date(9999, 12, 31))]
+    assert hist == [("matara", W[0], W[3]), ("galle", W[3], date(9999, 12, 31))]   # applied on the 3rd report
 
 
 def test_spelling_variants_are_one_area(con):
@@ -118,3 +120,27 @@ def test_old_demo_table_is_migrated():
     ensure_table(c)
     cols = {r[0] for r in c.execute("DESCRIBE gold.dim_region").fetchall()}
     assert "moh_key" in cols
+
+
+def test_late_report_for_an_old_week_rebuilds_history():
+    """NDCU uploaded 2026 W18/W20 months late: an area first printed in such a week must start THERE."""
+    c = duckdb.connect()
+    w = [date(2026, 4, 13), date(2026, 4, 27), date(2026, 5, 11)]
+    first = obs([(w[0], "Piliyandala", "colombo"), (w[2], "Piliyandala", "colombo"), (w[2], "Kesbewa", "colombo")])
+    assert sync(c, first) == {"applied": 2, "rebuilt": False, "late_weeks": []}
+    assert sync(c, first)["applied"] == 0                              # nothing new: no-op
+
+    late = pd.concat([first, obs([(w[1], "Kesbewa", "colombo")])])   # the late W18 report arrives
+    r = sync(c, late)
+    assert r["rebuilt"] and r["late_weeks"] == [w[1]] and r["applied"] == 3
+    assert c.execute("SELECT valid_from FROM gold.dim_region WHERE moh_area = 'Kesbewa'").fetchall() == [(w[1],)]
+    assert c.execute("SELECT count(*) FROM gold.dim_region_weeks").fetchone() == (3,)
+
+
+def test_table_from_before_the_week_log_is_rebuilt_once():
+    c = duckdb.connect()
+    ensure_table(c)
+    apply_snapshot(c, SNAPS[D1], D1)             # dim_region exists, but no gold.dim_region_weeks yet
+    r = sync(c, obs([(date(2026, 4, 13), "Piliyandala", "colombo")]))
+    assert r["rebuilt"] and r["applied"] == 1
+    assert sync(c, obs([(date(2026, 4, 13), "Piliyandala", "colombo")]))["rebuilt"] is False

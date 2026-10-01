@@ -106,7 +106,7 @@ class MOHHotspot(BaseModel):
     moh_area: str
     district: str
     cases: int
-    change_vs_prev_week: int
+    change_vs_prev_week: int | None    # None: area new to the list (blank "last week" cell, e.g. 2026-W01)
     split_from: str | None          # parent MOH area (lk_dengue mapping, unverified)
 
 
@@ -297,7 +297,8 @@ def moh_hotspots(
         raise HTTPException(404, f"No MOH-level data for week {week}")
     rows = [
         MOHHotspot(rank=i, moh_area=str(r["moh_area"]), district=str(r["district"]), cases=int(r["cases_this_week"]),
-                   change_vs_prev_week=int(r["change_vs_prev_week"]),
+                   change_vs_prev_week=None if _none_if_nan(r["change_vs_prev_week"]) is None
+                   else int(r["change_vs_prev_week"]),
                    split_from=None if r["parent_moh_area"] is None or r["parent_moh_area"] != r["parent_moh_area"]
                    else str(r["parent_moh_area"]))
         for i, r in enumerate(df.head(top).to_dict("records"), 1)

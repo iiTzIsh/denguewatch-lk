@@ -37,7 +37,7 @@ The Sri Lankan studies don't agree on a single rainfall lag, so the model gets 0
 - The model uses case counts. Census 2024 population exists per **district** (used for the dashboard's per-100,000 rates), but not per RDHS region, so the forecasts stay in counts.
 - 2026 WER weeks are Mon→Sun, so `week` numbers there are ISO weeks. The endemic channel compares week N with week N and ignores that one-to-two-day shift.
 - Reporting delay isn't modelled yet: WER publishes a week's cases after that week ends.
-- WER → NDCU switch: in the 3 overlapping 2026 weeks, NDCU weekly counts are 5–11% higher than WER (the 2025 cumulative differs by 2–3.5%). Values are kept as published and tagged in `case_source`, never rescaled.
+- WER → NDCU switch: in the 20 overlapping 2026 weeks (W1–W20), weekly counts differ by −9% to +17% (median +6%; +3.3% in total), and the 2025 cumulative agrees within about 4% from week 5 on. Values are kept as published and tagged in `case_source`, never rescaled.
 
 ## Backtest results (walk-forward, test years 2014–2025, 26 regions, 16,250 region-weeks)
 

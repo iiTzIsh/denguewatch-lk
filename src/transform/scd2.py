@@ -5,8 +5,8 @@ How a weekly snapshot is built (src.transform.ndcu_moh_parse -> silver ndcu_moh_
   snapshot(week W) = every MOH area reported up to W (an area that drops off the high-risk list still
                      EXISTS, so it stays current), with
      district        = the district it is printed under, changed only when a NEW district is printed in
-                       CONFIRM_WEEKS consecutive reports (one-off misprints are logged, not applied -
-                       e.g. Katuwana under Matara in 2026-W19 only, Hambantota in every other week)
+                       CONFIRM_WEEKS consecutive reports (one-off differences are logged, not applied).
+                       With the strict page-2 parser no MOH area changes district in 2026 (37 weeks).
      parent_moh_area = reference/moh_parents.csv (lk_dengue mapping, split dates UNVERIFIED)
      boundary_note   = first week NDCU reported it
   valid_from = the week a version was first observed. We never invent dates.
@@ -14,8 +14,12 @@ How a weekly snapshot is built (src.transform.ndcu_moh_parse -> silver ndcu_moh_
 SCD2 merge (same idea as before): a current row whose tracked columns changed -> closed (valid_to, is_current
 = false) and a new version inserted. Facts join to the version valid at their week (point-in-time).
 
-Run:  python -m src.transform.scd2      (incremental: only weeks newer than the last applied one)
-IMPORTANT: this table is INCREMENTAL - never CREATE OR REPLACE it, or history is lost.
+Run:  python -m src.transform.scd2
+Incremental: normally only weeks newer than the last applied one are merged. If a LATE report arrives for
+an older week (NDCU uploaded 2026 weeks 18 and 20 months later), the whole table is rebuilt from silver.
+That is safe here because every version comes from the stored weekly observations (silver keeps all weeks)
+and keys are deterministic (md5 of area + valid_from), so a rebuild reproduces history exactly - plus the
+late week. gold.dim_region_weeks records which weeks have been applied.
 """
 from __future__ import annotations
 
@@ -37,7 +41,7 @@ logger = logging.getLogger(__name__)
 PARENTS_CSV = REFERENCE_DIR / "moh_parents.csv"
 OPEN_END = "9999-12-31"   # industry convention: 'still valid' = far-future date (no NULLs in BETWEEN)
 TRACKED = ["district", "parent_moh_area", "boundary_note"]   # a change in these = new version
-CONFIRM_WEEKS = 2                           # a district change must be printed in 2 consecutive reports
+CONFIRM_WEEKS = 3   # a district change must be printed in 3 consecutive reports before it is applied
 
 DDL = f"""
 CREATE SCHEMA IF NOT EXISTS gold;
@@ -54,6 +58,8 @@ CREATE TABLE IF NOT EXISTS gold.dim_region (
     is_current       BOOLEAN NOT NULL
 );
 """
+
+WEEKS_DDL = "CREATE TABLE IF NOT EXISTS gold.dim_region_weeks (week_start DATE PRIMARY KEY)"
 
 HASH_EXPR = "md5(concat_ws('|', " + ", ".join(f"coalesce({c}, '')" for c in TRACKED) + "))"
 
@@ -171,6 +177,35 @@ def observed_snapshots(obs: pd.DataFrame, parents: pd.DataFrame | None = None) -
     return out
 
 
+def sync(con: duckdb.DuckDBPyConnection, obs: pd.DataFrame, parents: pd.DataFrame | None = None) -> dict:
+    """Bring gold.dim_region up to date with the observations. Returns what happened (for logs and tests)."""
+    ensure_table(con)
+    con.execute(WEEKS_DDL)
+    snaps = observed_snapshots(obs, parents)
+    done = {r[0] for r in con.execute("SELECT week_start FROM gold.dim_region_weeks").fetchall()}
+    has_rows = (con.execute("SELECT count(*) FROM gold.dim_region").fetchone() or (0,))[0] > 0
+    last = max(done) if done else None
+    late = [w for w, _ in snaps if last is not None and w < last and w not in done]
+
+    rebuilt = bool(late) or (has_rows and not done)   # late report, or a table from before the week log existed
+    if rebuilt:
+        if late:
+            logger.warning("Late NDCU report(s) for already-passed week(s) %s - rebuilding dim_region from silver",
+                           ", ".join(str(w) for w in late))
+        con.execute("DELETE FROM gold.dim_region")
+        con.execute("DELETE FROM gold.dim_region_weeks")
+        done, last = set(), None
+
+    applied = 0
+    for as_of, snap in snaps:
+        if last is not None and as_of <= last:
+            continue
+        apply_snapshot(con, snap, as_of)
+        con.execute("INSERT OR IGNORE INTO gold.dim_region_weeks VALUES (?)", [as_of])
+        applied += 1
+    return {"applied": applied, "rebuilt": rebuilt, "late_weeks": late}
+
+
 def main() -> None:
     setup_logging()
     with duckdb.connect(str(DB_PATH)) as con:
@@ -183,16 +218,11 @@ def main() -> None:
             logger.info("No MOH observations yet (python -m src.transform.ndcu_moh_parse) - dim_region unchanged")
             return
         parents = pd.read_csv(PARENTS_CSV) if PARENTS_CSV.exists() else None
-        last = latest_applied(con)
-        applied = 0
-        for as_of, snap in observed_snapshots(obs, parents):
-            if last is not None and as_of <= last:
-                continue
-            apply_snapshot(con, snap, as_of)
-            applied += 1
+        result = sync(con, obs, parents)
         row = con.execute("SELECT count(*) FILTER (WHERE is_current), count(*) FROM gold.dim_region").fetchone()
-        logger.info("dim_region: %d weekly snapshots applied; %s current MOH areas, %s versions in total",
-                    applied, row[0] if row else 0, row[1] if row else 0)
+        logger.info("dim_region: %d weekly snapshots applied%s; %s current MOH areas, %s versions in total",
+                    result["applied"], " (full rebuild)" if result["rebuilt"] else "",
+                    row[0] if row else 0, row[1] if row else 0)
 
 
 if __name__ == "__main__":

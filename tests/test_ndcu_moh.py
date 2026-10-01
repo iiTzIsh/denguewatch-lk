@@ -70,3 +70,60 @@ def test_quarantine(tmp_path):
     with pytest.raises(Exception):  # noqa: B017 - unreadable PDF is not a parse error but must not be loaded
         m.main(src, out, bad)
     assert not list(out.glob("*.csv"))
+
+
+# ---- early-2026 layouts (weeks 1-15) and heading quirks found when the archive's page 2 was added ----
+HDR = ("Week", [4, 5])
+
+
+def districts_of(rows, week=5):
+    recs, _ = m.parse_rows([HDR if week == 5 else ("Week", [week - 1 if week > 1 else 52, week]), *rows], week)
+    return {r["moh_area"]: r["district"] for r in recs}
+
+
+def test_heading_typos_and_two_line_headings():
+    rows = [("SOUTHERN PROVINCE", []), ("Matara District", []), ("Devinuwara", [25, 30]),
+            ("Hambantota", []), ("Distrcit", []),            # W02: split over two lines AND misspelt
+            ("Beliatta", [16, 10])]
+    assert districts_of(rows) == {"Devinuwara": "matara", "Beliatta": "hambantota"}
+
+
+@pytest.mark.parametrize("heading", ["Hambantota", "Hambanota", "Hambanthota District", "HambantotaDistrict",
+                                     "Hambantota Distrcit"])
+def test_heading_variants_seen_in_2026(heading):
+    """bare (W19/20), misspelt bare (W08/09), misspelt (W01), glued (W24-30 style), typo suffix (W05)."""
+    rows = [("Matara District", []), ("Weligama", [11, 20]), (heading, []), ("Katuwana", [4, 11])]
+    assert districts_of(rows)["Katuwana"] == "hambantota"
+
+
+def test_unknown_label_stops_the_file_instead_of_misfiling_rows():
+    """The old parser skipped unknown labels, so the next rows silently stayed under the previous district."""
+    rows = [("Matara District", []), ("Weligama", [11, 20]), ("Something Odd Here", []), ("Katuwana", [4, 11])]
+    with pytest.raises(m.MOHParseError, match="unrecognised label"):
+        districts_of(rows)
+
+
+def test_wrapped_moh_name_and_province_word():
+    rows = [("Kandy District", []), ("Gangawata", [1, 11]), ("Korale", []),        # W02: name on two lines
+            ("Kalutara District", []), ("Panadura", [12, 38]), ("NIHS", []),     # capital name part
+            ("SABARAGAMUWA", []), ("Ratnapura District", []), ("Balangoda", [6, 11])]   # W33: province alone
+    assert districts_of(rows) == {"Gangawata Korale": "kandy", "Panadura NIHS": "kalutara",
+                                  "Balangoda": "ratnapura"}
+
+
+def test_blank_last_week_cell_and_week_one_header():
+    recs, _ = m.parse_rows([("Week", [52, 1]), ("Gampaha District", []), ("Katana", [None, 12])], issue_week=1)
+    assert (recs[0]["cases_prev_week"], recs[0]["cases_this_week"]) == (None, 12)   # W01: area new to the list
+
+
+def test_spelling_variants_share_one_key():
+    assert m.moh_key("Pyagala") == m.moh_key("Payagala") == "payagala"
+    assert m.moh_key("Pugode(Dompe)") == m.moh_key("Pugoda (Dompe)")
+
+
+def test_outputs_of_an_older_parser_version_are_redone(tmp_path):
+    csv = tmp_path / "x.csv"
+    csv.write_text("iso_year,moh_area\n2026,Katuwana\n")                         # made before versions existed
+    assert not m.is_current(csv)
+    csv.write_text(f"iso_year,moh_area,parser_version\n2026,Katuwana,{m.PARSER_VERSION}\n")
+    assert m.is_current(csv)

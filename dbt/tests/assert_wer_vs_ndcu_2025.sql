@@ -1,7 +1,9 @@
 {{ config(severity='warn') }}
 -- CROSS-SOURCE CHECK: two independent government sources should roughly agree.
 -- Each NDCU weekly PDF prints last year's (2025) cumulative cases up to that week; WER history has 2025 week by week.
--- Weeks differ by ~2 days and the reporting systems differ, so allow 5% (observed: mostly 2-3%).
+-- A WER week counts toward 2025 if it ENDS in 2025 (WER's "2025 week 1" ran 21-27 Dec 2024).
+-- WER weeks run Sat->Fri, NDCU's Mon->Sun: that 2-day shift is ~300 cases, so allow 5% or 400 cases,
+-- whichever is bigger (observed: within 4% from week 5 on; 5-7% in weeks 2-4, where the total is still small).
 with ndcu as (
     select year, iso_week, max(week_end) as week_end, sum(cum_prev_year) as ndcu_cum_2025
     from {{ source('silver', 'ndcu_weekly_cases') }}
@@ -11,10 +13,10 @@ with ndcu as (
 compared as (
     select n.iso_week, n.ndcu_cum_2025,
            (select sum(w.cases) from {{ ref('stg_wer_weekly') }} w
-             where w.year = 2025 and w.week_end <= n.week_end - interval 1 year) as wer_cum_2025
+             where w.week_end >= date '2025-01-01' and w.week_end <= n.week_end - interval 1 year) as wer_cum_2025
     from ndcu n
 )
 select *, round(100.0 * (wer_cum_2025 - ndcu_cum_2025) / ndcu_cum_2025, 1) as diff_pct
 from compared
 where wer_cum_2025 is not null and ndcu_cum_2025 > 0
-  and abs(wer_cum_2025 - ndcu_cum_2025) > 0.05 * ndcu_cum_2025
+  and abs(wer_cum_2025 - ndcu_cum_2025) > greatest(0.05 * ndcu_cum_2025, 400)

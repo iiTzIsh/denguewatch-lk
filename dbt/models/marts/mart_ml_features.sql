@@ -15,8 +15,8 @@
 
 -- CASES = WER history (2006 -> its last week) + NDCU weekly updates AFTER that, so the model can forecast
 -- from the newest data. NDCU (latest, restated counts) uses the same 26 regions and Mon->Sun weeks as
--- 2026 WER. Known gap: in the 3 overlapping 2026 weeks NDCU is 5-11% higher than WER (2025 cumulative:
--- 2-3.5%) - kept as-is and tagged in case_source, never silently rescaled.
+-- 2026 WER. Known gap: in the 20 overlapping 2026 weeks, weekly counts differ by -9% to +17% (median +6%,
+-- total +3.3%); 2025 cumulative agrees within ~4% - kept as-is and tagged in case_source, never rescaled.
 with wer as (
     select rdhs, district, wer_week_key, year, week, week_start, week_end, cases, 'WER' as case_source
     from {{ ref('stg_wer_weekly') }}

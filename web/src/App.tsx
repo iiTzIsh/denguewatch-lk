@@ -116,7 +116,7 @@ function Footer() {
     <footer className="mt-16 border-t border-line">
       <div className="mx-auto grid max-w-[1240px] gap-6 px-4 py-10 text-sm text-ink-2 sm:px-8 md:grid-cols-[2fr_3fr]">
         <div>
-          <p className="font-display text-base font-semibold text-ink">Portfolio project, not official health advice.</p>
+          <p className="font-display text-base font-semibold text-ink">Made By Ishara Madhusanka ©️ 2026</p>
           <p className="mt-2">For official figures see the National Dengue Control Unit.</p>
         </div>
         <ul className="space-y-1">

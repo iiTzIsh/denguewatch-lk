@@ -21,7 +21,7 @@ Our own WER scraper stays in the project; when the site returns, it can **re-ver
 |---|---|
 | Coverage | 2006-W52 → 2026-W20 (week ending 2026-05-17); 26 RDHS regions; 26,311 rows |
 | 2017 epidemic present | 174,687 cases in 2017 |
-| NDCU vs WER, 2025 cumulative (20 NDCU weeks) | WER within **~2–3.5%** of NDCU in 19 weeks; **7.1%** in NDCU week 32, where NDCU's own cumulative *drops* (34,316 → 33,436) — an NDCU-side anomaly |
+| NDCU vs WER, 2025 cumulative (37 NDCU weeks) | Within **~4%** from week 5 on; 5–7% in weeks 2–4 (2-day calendar shift on a small total). NDCU's own cumulative *drops* in week 32 (34,316 → 33,436), an NDCU-side anomaly. *(Corrected 1 Oct 2026: the first version of this check also counted WER's "2025 week 1" (21–27 Dec 2024), which made the gap look like 2–3.5%.)* |
 | Week definitions | Sat→Fri epi weeks up to 2025; **Mon→Sun (ISO) in 2026**; 2009 W17 = 8 days, W22 = 6 days |
 | Gaps | 2023-W52 missing; 2026-W07 has 25 of 26 regions |
 

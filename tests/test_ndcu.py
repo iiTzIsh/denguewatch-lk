@@ -85,3 +85,40 @@ def _text() -> str:
 
 
 FIXTURE_TEXT = _text()
+
+
+def test_crawl_follows_archive_pages():
+    """Late uploads (2026 W18/W20) sit on archive page 2: the crawler must follow pagination."""
+    from src.extract.ndcu import BASE_URL, crawl_listing
+
+    def pdf(week: int, folder: str = "2026/06") -> str:
+        return f'<a href="/wp-content/uploads/{folder}/Weekly-Dengue-Update-2026-Week-{week}.pdf">W{week}</a>'
+
+    site = {
+        f"{BASE_URL}/": pdf(37),
+        f"{BASE_URL}/weekly-report/": pdf(21) + pdf(19) + f'<a href="{BASE_URL}/weekly-report/page/2/">2</a>',
+        f"{BASE_URL}/weekly-report/page/2/": pdf(15) + pdf(18, "2026/08") + pdf(20, "2026/08")
+        + '<a href="/weekly-report/">1</a><a href="/weekly-report/page/2">2</a>',   # links back: no loop
+    }
+    visited: list[str] = []
+
+    def fetch(url: str) -> str | None:
+        visited.append(url)
+        return site.get(url)
+
+    links = crawl_listing(fetch)
+    weeks = sorted(int(u.rsplit("-", 1)[-1].removesuffix(".pdf")) for u in links)
+    assert weeks == [15, 18, 19, 20, 21, 37]
+    assert len(visited) == len(set(visited)) == 3      # each page once
+
+
+def test_crawl_has_a_page_cap():
+    from src.extract.ndcu import BASE_URL, crawl_listing
+
+    def endless(url: str) -> str:   # every page links to a next page
+        n = int(url.rstrip("/").rsplit("/", 1)[-1]) if "/page/" in url else 1
+        return f'<a href="{BASE_URL}/weekly-report/page/{n + 1}/">next</a>'
+
+    calls: list[str] = []
+    crawl_listing(lambda u: calls.append(u) or endless(u), max_pages=5)
+    assert len(calls) == 5

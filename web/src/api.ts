@@ -38,7 +38,7 @@ export interface ForecastRegion {
 }
 export type Risk = "high" | "watch" | "normal" | "unknown";
 export interface ForecastResponse { model_version: string; based_on_week_ending: string; regions: ForecastRegion[] }
-export interface MOHHotspot { rank: number; moh_area: string; district: string; cases: number; change_vs_prev_week: number; split_from: string | null }
+export interface MOHHotspot { rank: number; moh_area: string; district: string; cases: number; change_vs_prev_week: number | null; split_from: string | null }
 export interface MOHResponse { week: string; listed: number; moh_areas: MOHHotspot[]; note: string }
 export interface ModelPerformance {
   model_name: string; horizon_weeks: number; forecasts: number; first_target_week: string; last_target_week: string;

@@ -73,12 +73,13 @@ function Change({ n }: { n: number | null }) {
   const up = n > 0;
   return (
     <span className="inline-flex items-center justify-end gap-1">
+      {/* the arrow carries the spoken word itself: a hidden sr-only span here overflowed the table by 1px */}
       {n !== 0 && (
-        <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden className={up ? "text-ember" : "text-ink-3"}>
+        <svg width="9" height="9" viewBox="0 0 10 10" role="img" aria-label={up ? "up" : "down"}
+          className={up ? "text-ember" : "text-ink-3"}>
           <path d={up ? "M5 1 9 8H1z" : "M5 9 1 2h8z"} fill="currentColor" />
         </svg>
       )}
-      <span className="sr-only">{up ? "up" : n < 0 ? "down" : "no change"}</span>
       {signed(n)}
     </span>
   );

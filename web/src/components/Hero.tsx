@@ -100,6 +100,8 @@ function EpidemicCurve({ national, week }: { national: NationalPoint[]; week: st
     const peakIdx = slots.findIndex((x) => x.p?.week === peak.week);
     const base = chartBase(cssVar);
     const ember = cssVar("--ember");
+    // a week with no reported neighbour on either side can't form a line: draw it as a dot so it never disappears
+    const lone = slots.map((x, i) => !!x.p && !slots[i - 1]?.p && !slots[i + 1]?.p);
     return {
       grid: { left: 8, right: 16, top: 28, bottom: 4, containLabel: true },
       tooltip: {
@@ -119,7 +121,8 @@ function EpidemicCurve({ national, week }: { national: NationalPoint[]; week: st
       series: [{
         type: "line", data: slots.map((x) => x.p?.cases ?? null), connectNulls: false,
         lineStyle: { color: ember, width: 2 }, itemStyle: { color: ember },
-        showSymbol: false, symbolSize: 8, emphasis: { scale: false },
+        showSymbol: true, symbol: "circle", symbolSize: (_v: unknown, p: { dataIndex: number }) => (lone[p.dataIndex] ? 7 : 0),
+        emphasis: { scale: false },
         areaStyle: { color: ember, opacity: 0.08 },
         markPoint: {
           symbol: "circle", symbolSize: 10,
