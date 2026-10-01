@@ -6,6 +6,8 @@
 
 > ⚠️ **Disclaimer:** This is a portfolio project, **not official health advice**. For official dengue information see the [National Dengue Control Unit](https://www.dengue.health.gov.lk/).
 
+![DengueWatch LK dashboard](docs/images/web_1_hero.png)
+
 ---
 
 ## Why
@@ -24,7 +26,7 @@ NDCU website          ─┘    retries · logging ·          ↓  load + valid
                                                          ↓  gold.mart_ml_features (lags, rain 0-15 wks, endemic channel)
                             ML: walk-forward backtest → MLflow registry (@champion) → weekly batch scoring
                                                          ↓  ml.forecast_weekly
-                                                 Streamlit dashboard · FastAPI · Telegram alert
+                                                 React dashboard · FastAPI · Telegram alert
 ```
 
 ![dbt lineage graph](docs/images/dbt_lineage.png)
@@ -40,9 +42,9 @@ NDCU website          ─┘    retries · logging ·          ↓  load + valid
 | **ML** | Feature mart in dbt (date-checked lags, rainfall 0–15 weeks back, endemic channel); baselines vs **LightGBM** growth model in a **walk-forward backtest** 2014–2025; every run in **MLflow**; model registry with **champion/challenger** promotion; monthly retrain DAG; weekly **batch scoring** to `ml.forecast_weekly` |
 | **Monitoring** | **Forecast vs actual** vs naive (`gold.mart_forecast_accuracy`, as-of replay for honest history); **Evidently data drift** vs the same season in past years, alarm **calibrated on 2014–2025**; drift automatically triggers a retrain; "Model health" in the dashboard + `GET /model/health` |
 | **Orchestration** | **Airflow 3.3.2** (LocalExecutor, Docker Compose): weekly DAG `extract → silver → SCD2 → dbt build → forecasts → alert` (+ dbt docs, drift check → retrain if drifted); `retrain_monthly`; separate ingest DAGs so a flaky government site doesn't block the pipeline; dbt and ML each in their own virtualenv |
-| **Dashboard** | Streamlit: district map of weekly cases, KPIs, national + district trends, rainfall 1–4 weeks earlier, **2- and 4-week forecast table with risk levels**, data-freshness line and disclaimer |
+| **Dashboard** | **React + TypeScript** (Vite, Tailwind, Radix UI) served by nginx; reads only the API. District choropleth (**MapLibre GL**, cases or per 100,000), a data-written headline, national curve with honest gaps, **2- and 4-week forecast bullets vs each region's outbreak level**, MOH hotspots, rain-vs-cases district view, forecast-vs-actual chart (**ECharts**) and drift status; light/dark themes with colour-blind-checked palettes; works on phones |
 | **Alerts & API** | Weekly Telegram message (top districts + regions forecast near their outbreak level, stale forecasts hidden, sent once per week); read-only FastAPI incl. `/forecast`, typed responses, OpenAPI docs |
-| **Quality** | GitHub Actions CI on every push: ruff + mypy + pytest, the **full pipeline + dbt build on sample data**, and Airflow DAG integrity; real-PDF regression tests; config via environment variables |
+| **Quality** | GitHub Actions CI on every push: ruff + mypy + pytest, the **full pipeline + dbt build on sample data**, Airflow DAG integrity, and the web app's type check + build; real-PDF regression tests; config via environment variables |
 
 ## Forecast results
 Walk-forward backtest (train on past years only, test each year 2014–2025, 16,250 region-weeks). Mean absolute error in weekly cases per region:
@@ -63,10 +65,10 @@ Walk-forward backtest (train on past years only, test each year 2014–2025, 16,
 **Quick start: one command (Docker Desktop):**
 ```bash
 git clone https://github.com/iiTzIsh/denguewatch-lk && cd denguewatch-lk
-docker compose up -d                  # MLflow → setup (data, dbt, model, forecasts) → dashboard + API
+docker compose up -d                  # MLflow → setup (data, dbt, model, forecasts) → API + dashboard
 docker compose logs -f init           # watch setup; "DengueWatch LK is ready" when done
 ```
-Then open the dashboard at http://localhost:8501, the API at http://localhost:8000/docs and MLflow at http://localhost:5000.
+Then open the dashboard at **http://localhost:3000**, the API at http://localhost:8000/docs and MLflow at http://localhost:5000.
 Setup ([src/bootstrap.py](src/bootstrap.py)) downloads the WER history, NDCU PDFs and 20 years of weather, runs every data check, trains and registers the model, and makes forecasts. Open-Meteo's free daily limit covers about 450 of the 525 weather downloads, so re-run `docker compose run --rm init --force` the next day to finish. It continues where it stopped, and the system works in the meantime.
 
 **Local (Python 3.11+):**
@@ -81,10 +83,10 @@ pytest
 ```bash
 docker compose run --rm pipeline
 ```
-**Dashboard (Streamlit):** — how to read it: [docs/DASHBOARD_GUIDE.md](docs/DASHBOARD_GUIDE.md)
+**Dashboard (React):** — how to read it: [docs/DASHBOARD_GUIDE.md](docs/DASHBOARD_GUIDE.md)
 ```bash
-pip install -r requirements-dashboard.txt
-streamlit run dashboard/app.py                            # http://localhost:8501
+docker compose up -d web                                  # http://localhost:3000 (starts the API too)
+cd web && npm install && npm run dev                      # development with live reload (Node 22+, API on :8000)
 ```
 **REST API (FastAPI):**
 ```bash
@@ -99,6 +101,10 @@ uvicorn src.api.main:app --reload                          # http://localhost:80
 | `GET /districts` · `GET /districts/{district}/trend` | district list · weekly cases + rainfall |
 | `GET /forecast?top=5` | 2- and 4-week forecasts per region with risk level (latest batch, model version) |
 | `GET /model/health` | forecast vs actual (vs naive) per model and horizon + latest data-drift check |
+| `GET /moh/hotspots?week=2026-W37` | high-risk MOH areas NDCU listed that week |
+| `GET /national/trend` · `GET /districts/{district}/rain?since=` | national weekly cases · continuous weekly rainfall |
+| `GET /model/forecast-vs-actual?horizon=4` | national actual vs forecast vs naive per target week |
+| `GET /geo/districts` | district boundaries (GeoJSON) for maps |
 
 **ML (MLflow tracking + registry):**
 ```bash
@@ -125,7 +131,8 @@ src/extract/     weather.py, wer_links.py, wer_pdf.py
 src/load/        DuckDB loading, SQL runner
 src/transform/   NDCU PDF parsers (district + MOH tables), SCD2 region dimension
 src/ml/          features, models, backtest, train (registry), predict (batch scoring), risk rule
-src/api/ · dashboard/ · src/alerts/   serving: FastAPI, Streamlit, Telegram
+src/api/ · src/alerts/   serving: FastAPI, Telegram
+web/             React dashboard (Vite + TypeScript), nginx config, Dockerfile
 reference/       small versioned reference data (districts, population, MOH parent areas)
 infra/airflow/   Airflow image (dbt in its own virtualenv)
 tests/           pytest
@@ -148,7 +155,7 @@ docs/            data model, source notes, design decisions
 - [x] Phase 2 – Silver: MOH areas from NDCU PDFs (SCD2 from observed data), Census 2024 population
 - [x] Phase 3 – Gold: dengue fact tables (NDCU + WER), ML feature mart (lags, endemic channel)
 - [x] Phase 4 – ML: baselines vs LightGBM, walk-forward backtest, MLflow tracking + registry, champion/challenger, monthly retrain
-- [x] Phase 5 – Serving: Streamlit + Folium map, FastAPI, weekly Telegram alert — all with forecasts
+- [x] Phase 5 – Serving: React dashboard (MapLibre + ECharts), FastAPI, weekly Telegram alert — all with forecasts
 - [x] Phase 6 – Production: GitHub Actions CI, forecast-vs-actual tracking, Evidently drift monitoring with automatic retrain trigger
 - [ ] Portfolio polish: README screenshots, demo video, LinkedIn post
 - [ ] Phase 7 – Cloud: Azure (Data Factory, storage) + Databricks Free Edition

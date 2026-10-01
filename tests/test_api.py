@@ -94,3 +94,24 @@ def test_model_health_empty(client):
 def test_hotspots_include_rate(client):
     body = client.get("/hotspots").json()
     assert body["districts"][0]["cases_per_100k"] == 10.4   # 207 per 2,000,000 = 10.35 -> rounded
+
+
+def test_national_trend(client):
+    r = client.get("/national/trend")
+    assert r.status_code == 200
+    assert r.json() == [{"week": "2026-W36", "week_start": "2026-08-31", "cases": 222},
+                        {"week": "2026-W37", "week_start": "2026-09-07", "cases": 381}]
+
+
+def test_forecast_vs_actual_empty_before_scoring(client):
+    r = client.get("/model/forecast-vs-actual?horizon=4")
+    assert r.status_code == 200 and r.json() == []
+    assert client.get("/model/forecast-vs-actual?horizon=3").status_code == 422
+
+
+def test_geo_districts(client):
+    r = client.get("/geo/districts")
+    assert r.status_code == 200
+    geo = r.json()
+    assert geo["type"] == "FeatureCollection" and len(geo["features"]) == 25
+    assert all("district" in f["properties"] for f in geo["features"])

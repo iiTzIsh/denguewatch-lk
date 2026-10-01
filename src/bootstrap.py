@@ -111,7 +111,7 @@ def main() -> int:
         return 1
     logger.info("")
     logger.info("DengueWatch LK is ready (%.0f min).", (time.perf_counter() - t0) / 60)
-    logger.info("  Dashboard  http://localhost:8501")
+    logger.info("  Dashboard  http://localhost:3000")
     logger.info("  API        http://localhost:8000/docs")
     logger.info("  MLflow     http://localhost:5000")
     logger.info("  Airflow (weekly automation):  docker compose -f docker-compose.airflow.yml up -d")

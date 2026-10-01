@@ -159,14 +159,14 @@ This "bronze → silver → gold" pattern is called the **medallion architecture
 | Finish the weather backfill | Run `python -m src.extract.weather_backfill` tomorrow |
 | WER history (2006–2024) | Waiting: site returns error 500. **Needed to train the prediction model.** |
 | Real MOH region changes (SCD2) | ✅ Done: 233 MOH areas from NDCU page-2 tables (see moh_regions.md) |
-| Population (for cases per 100,000 people) | Not yet sourced |
+| Population (for cases per 100,000 people) | ✅ Done: Census 2024, district level |
 
 ---
 
 ## 8. What's next
 
-1. **Streamlit dashboard**: a Sri Lanka map of this week's hotspots
-2. **WER ingestion + PDF parser**, as soon as the site is back
-3. **Machine learning**: simple baselines first, then LightGBM, tested properly on past years
-4. **Prediction API + weekly "Top 5 districts" alert**
+1. ✅ **Dashboard**: first Streamlit, now a React web app (map, forecasts, model health)
+2. ✅ **WER history** (via denguedatahub while the site is down; own parser ready)
+3. ✅ **Machine learning**: baselines, then LightGBM, walk-forward backtest, MLflow registry
+4. ✅ **Forecast API + weekly Telegram alert**
 5. **Move to the cloud** (Azure + Databricks Free) once the local version is complete

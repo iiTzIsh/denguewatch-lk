@@ -1,0 +1,137 @@
+@import "tailwindcss";
+
+/* Body text is Atkinson Hyperlegible; only its digits are swapped for Bricolage's
+   (Atkinson's slashed zero makes dates like 2026 read oddly). unicode-range = digits only. */
+@font-face {
+  font-family: "DW Figures";
+  src: url("./assets/fonts/bricolage-grotesque-latin-wght-normal.woff2") format("woff2-variations");
+  font-weight: 200 800;
+  font-display: swap;
+  unicode-range: U+0030-0039;
+}
+
+/* ---------- design tokens: one place for light + dark ---------- */
+:root {
+  color-scheme: light;
+  --bg: #eef3f2;          /* mist */
+  --surface: #ffffff;
+  --surface-2: #f6f9f8;
+  --ink: #0f2a2e;         /* deep lagoon ink */
+  --ink-2: #48605f;
+  --ink-3: #6f8486;
+  --line: #d5e0de;
+  --lagoon: #1677b0;      /* brand + model forecast */
+  --ember: #df5f26;       /* dengue cases */
+  --rain: #2b8c8c;
+  --naive: #8a9a9c;
+  --ramp-0: #e7eceb;      /* no data */
+  --ramp-1: #fbe3d4;
+  --ramp-2: #f6b48e;
+  --ramp-3: #ec8350;
+  --ramp-4: #d65a22;
+  --ramp-5: #9c3a12;
+  --high: #d03b3b;
+  --watch: #fab219;
+  --normal: #6f8486;
+  --focus: #1677b0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --bg: #0d191b;
+    --surface: #132326;
+    --surface-2: #182b2e;
+    --ink: #e6efee;
+    --ink-2: #a8bcbc;
+    --ink-3: #82999a;
+    --line: #263b3e;
+    --lagoon: #3a8fd6;
+    --ember: #e06a32;
+    --rain: #3aa5a5;
+    --naive: #7d9193;
+    --ramp-0: #1f3235;
+    --ramp-1: #4b2c1f;
+    --ramp-2: #7a3c20;
+    --ramp-3: #b44f23;
+    --ramp-4: #e0743c;
+    --ramp-5: #f6ab7c;
+    --focus: #5aa8e8;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d191b;
+  --surface: #132326;
+  --surface-2: #182b2e;
+  --ink: #e6efee;
+  --ink-2: #a8bcbc;
+  --ink-3: #82999a;
+  --line: #263b3e;
+  --lagoon: #3a8fd6;
+  --ember: #e06a32;
+  --rain: #3aa5a5;
+  --naive: #7d9193;
+  --ramp-0: #1f3235;
+  --ramp-1: #4b2c1f;
+  --ramp-2: #7a3c20;
+  --ramp-3: #b44f23;
+  --ramp-4: #e0743c;
+  --ramp-5: #f6ab7c;
+  --focus: #5aa8e8;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-lagoon: var(--lagoon);
+  --color-ember: var(--ember);
+  --color-rain: var(--rain);
+  --color-high: var(--high);
+  --color-watch: var(--watch);
+  --font-display: "Bricolage Grotesque Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "DW Figures", "Atkinson Hyperlegible Next", ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+body {
+  background: var(--bg);
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+}
+/* numbers: Bricolage's figures (Atkinson's slashed zero reads oddly in tables), tabular so columns line up */
+.num {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+h1, h2, h3 {
+  font-family: var(--font-display);
+  text-wrap: balance;
+}
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+::selection {
+  background: color-mix(in oklab, var(--lagoon) 25%, transparent);
+}
+
+/* map: transparent canvas, our own tooltip */
+.maplibregl-canvas { outline: none; }
+.maplibregl-ctrl-attrib { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}

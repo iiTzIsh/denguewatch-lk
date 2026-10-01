@@ -251,7 +251,7 @@ A daily **calendar table (`dim_date`)** links each day to both.
 | **2 – Silver** | NDCU PDF parser with total checks + quarantine; weather silver tables; newest-wins dedupe | 🟡 NDCU ✅, WER parser waiting |
 | **3 – Gold** | Star schema, calendar bridge (`dim_date`), weather facts (both week types), NDCU dengue fact with restatements, monitoring table; 57 data tests | 🟡 Done for NDCU + weather; WER fact waiting |
 | **4 – ML** | Forecasting | ⛔ Blocked: needs WER history |
-| **5 – Serving** | Streamlit map dashboard, FastAPI, weekly Telegram alert | ✅ Done (showing current cases) |
+| **5 – Serving** | React dashboard (map, forecasts, model health), FastAPI, weekly Telegram alert | ✅ Done |
 | **6 – Production** | GitHub Actions CI (lint, types, tests, full pipeline, DAG checks) | 🟡 CI ✅; drift monitoring, retraining and demo video later |
 | **7 – Cloud** | Azure + Databricks Free | ⏳ Later |
 
@@ -309,7 +309,7 @@ A daily **calendar table (`dim_date`)** links each day to both.
 | **dbt** | Builds gold tables + 57 data tests + lineage docs | Industry standard for SQL transformation |
 | **Apache Airflow 3** | Weekly scheduling, retries, monitoring | Most widely used pipeline scheduler |
 | **Docker** | Same environment everywhere | Standard for deployment |
-| **Streamlit + Folium + Altair** | Dashboard, map, charts | Fast to build, looks professional |
+| **React + TypeScript, MapLibre, ECharts** | Dashboard, map, charts | A real web app over the API, the way industry products are built |
 | **FastAPI** | REST API with auto-generated docs | Modern, typed, fast |
 | **Telegram Bot API** | Weekly phone alert | Free and simple |
 | **pytest / ruff / mypy** | Code tests, style, type checks | Standard Python quality tools |

@@ -2,8 +2,8 @@
 #
 #   mlflow     model tracking + registry             http://localhost:5000
 #   init       one-time setup: data -> dbt -> model -> forecasts (src/bootstrap.py), then exits
-#   dashboard  starts after init finished            http://localhost:8501
 #   api        starts after init finished            http://localhost:8000/docs
+#   web        React dashboard (nginx -> api)        http://localhost:3000
 #
 # Watch setup progress:   docker compose logs -f init
 # Re-run setup:           docker compose run --rm init --force
@@ -11,7 +11,8 @@
 # Weekly automation:      docker compose -f docker-compose.airflow.yml up -d   (Airflow, separate stack)
 
 x-app: &app
-  image: denguewatch-app
+  build: .                        # every app service can build the image, so none starts without it
+  image: denguewatch-app          # (Docker caches layers: it is really built once)
   volumes:
     - ./data:/app/data
     - ./logs:/app/logs
@@ -47,7 +48,6 @@ services:
 
   init:
     <<: *app
-    build: .
     entrypoint: ["python", "-m", "src.bootstrap"]   # skips itself if already set up (fast)
     command: []                                     # extra flags go here: docker compose run --rm init --force
     env_file:
@@ -58,34 +58,31 @@ services:
         condition: service_healthy
     restart: "no"
 
-  dashboard:
-    <<: *app
-    command: ["streamlit", "run", "dashboard/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
-    ports:
-      - "8501:8501"
-    volumes:
-      - ./data:/app/data:ro             # read-only: the dashboard never writes to the warehouse
-    depends_on:
-      init:
-        condition: service_completed_successfully
-    restart: unless-stopped
-
   api:
     <<: *app
     command: ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
     volumes:
-      - ./data:/app/data:ro             # read-only
+      - ./data:/app/data:ro             # read-only: the API never writes to the warehouse
     depends_on:
       init:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  web:
+    # React dashboard (web/): built with Node, served by nginx, which forwards /api/* to the api service
+    build: ./web
+    image: denguewatch-web
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
   pipeline:
     # one-off weekly-style run by hand (Airflow does this on schedule): docker compose run --rm pipeline
     <<: *app
-    build: .
     command: ["python", "-m", "src.pipeline"]
     profiles: ["manual"]
     depends_on:

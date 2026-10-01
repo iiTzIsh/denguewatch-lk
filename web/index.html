@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Weekly dengue cases, 2- and 4-week forecasts and rainfall for Sri Lanka's districts. Portfolio project, not official health advice." />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>DengueWatch LK</title>
+    <script>
+      // apply the saved theme before paint (no flash). Storage may be blocked: ignore errors.
+      try { var t = localStorage.getItem("dw-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

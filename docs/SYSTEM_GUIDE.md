@@ -112,7 +112,7 @@ python -m src.alerts.telegram --force       # send again anyway
 
 ## 3. The REST API (for other apps)
 
-A read-only "data counter": other programs (a website, a mobile app, another team) can ask for the same numbers the dashboard shows, as JSON.
+A read-only "data counter": other programs (a website, a mobile app, another team) can ask for the same numbers as JSON. **The dashboard itself is one of these programs**: the React app gets every number from this API, so the two can never disagree.
 
 ```powershell
 uvicorn src.api.main:app --reload            # http://localhost:8000/docs (interactive)
@@ -127,6 +127,10 @@ uvicorn src.api.main:app --reload            # http://localhost:8000/docs (inter
 | `GET /forecast?top=5` | Forecast per region with risk level + model version |
 | `GET /moh/hotspots?week=2026-W37&top=10` | High-risk MOH areas NDCU listed that week |
 | `GET /model/health` | Forecast error vs naive + latest drift check |
+| `GET /national/trend` | National weekly cases |
+| `GET /districts/{name}/rain?since=2026-03-02` | Weekly rainfall, continuous |
+| `GET /model/forecast-vs-actual?horizon=4` | National actual vs model vs naive per week |
+| `GET /geo/districts` | District outlines (GeoJSON) for the map |
 
 How it works in practice:
 - **Typed responses (Pydantic).** Every answer has a fixed shape, which is the "contract" other apps can rely on.
@@ -258,13 +262,14 @@ Plus **idempotency**: every step can be re-run safely. Re-running never duplicat
 
 ## 10. CI: automatic checks on GitHub
 
-Every `git push` runs 3 jobs (`.github/workflows/ci.yml`):
+Every `git push` runs 4 jobs (`.github/workflows/ci.yml`):
 
 | Job | Does |
 |---|---|
 | Lint + types + tests | ruff (style), mypy (types), pytest (~120 tests) |
 | Pipeline on sample data | Builds small fake data + 3 real NDCU PDFs, then runs the **whole pipeline and all dbt checks** |
 | Airflow DAG check | All DAGs load, and task order is correct |
+| Web dashboard | `npm ci` + TypeScript type check + production build of `web/` |
 
 🟢 badge on the README = everything passed. 🔴 = GitHub emails you, and you fix before merging.
 
@@ -272,11 +277,11 @@ Every `git push` runs 3 jobs (`.github/workflows/ci.yml`):
 
 ## 11. What runs where (ports)
 
-**Everything in one command:** `docker compose up -d` starts MLflow → runs setup once (`init`, `src/bootstrap.py`: data → dbt → model → forecasts, skips itself if already done) → starts the dashboard and API. Watch it with `docker compose logs -f init`; re-run it with `docker compose run --rm init --force`. Airflow is a separate stack (next row) because it's heavy and only needed for the weekly schedule.
+**Everything in one command:** `docker compose up -d` starts MLflow → runs setup once (`init`, `src/bootstrap.py`: data → dbt → model → forecasts, skips itself if already done) → starts the API and the dashboard (`web`: nginx serving the React app, forwarding `/api/*` to the API). Watch it with `docker compose logs -f init`; re-run it with `docker compose run --rm init --force`. Airflow is a separate stack (next row) because it's heavy and only needed for the weekly schedule.
 
 | Service | Start | Address |
 |---|---|---|
-| Dashboard | `streamlit run dashboard/app.py` or `docker compose up -d dashboard` | http://localhost:8501 |
+| Dashboard (React) | `docker compose up -d web`, or `cd web; npm run dev` for development | http://localhost:3000 |
 | API | `uvicorn src.api.main:app` or `docker compose up -d api` | http://localhost:8000/docs |
 | MLflow | `docker compose up -d mlflow` | http://localhost:5000 |
 | Airflow | `docker compose -f docker-compose.airflow.yml up -d` | http://localhost:8080 |
@@ -313,7 +318,7 @@ python -m src.ml.replay                       # honest past forecasts
 python -m src.ml.monitor                      # drift check (+ --calibrate)
 # outputs
 python -m src.alerts.telegram --dry-run       # preview the message
-streamlit run dashboard/app.py                # dashboard
+docker compose up -d web                      # dashboard -> http://localhost:3000
 uvicorn src.api.main:app --reload             # API
 # quality
 pytest ; ruff check . ; mypy src

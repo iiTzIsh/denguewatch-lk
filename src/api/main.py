@@ -11,6 +11,10 @@ Endpoints:
   GET /forecast?top=5                  2- and 4-week case forecasts per region with risk level (@champion model)
   GET /moh/hotspots?week=2026-W37&top=10   high-risk MOH areas NDCU listed that week (page 2 of the PDF)
   GET /model/health                    forecast vs actual (vs naive) per model + latest data-drift check
+  GET /national/trend                  national weekly cases (all districts)
+  GET /districts/{district}/rain?since=2026-03-01   weekly rainfall, continuous (no gaps)
+  GET /model/forecast-vs-actual?horizon=4   national actual vs forecast vs naive per target week
+  GET /geo/districts                   district boundaries (GeoJSON, geoBoundaries / OSM, ODbL) for maps
 """
 from __future__ import annotations
 
@@ -21,8 +25,10 @@ from typing import Annotated
 
 import duckdb
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from src.config import REFERENCE_DIR
 from src.reports import dashboard_data as dd
 
 DISCLAIMER = "Portfolio project - not official health advice. Source: NDCU weekly updates, Open-Meteo (CC BY 4.0)."
@@ -134,6 +140,25 @@ class DriftStatus(BaseModel):
     drift_share: float
     drifted_features: list[str]
     checked_at: datetime
+
+
+class NationalPoint(BaseModel):
+    week: str
+    week_start: date
+    cases: int
+
+
+class RainPoint(BaseModel):
+    week_start: date
+    rain_mm: float | None
+
+
+class AccuracyPoint(BaseModel):
+    target_week_end: date
+    actual: int
+    forecast: float
+    naive: float
+    regions: int
 
 
 class ModelHealth(BaseModel):
@@ -278,3 +303,34 @@ def moh_hotspots(
         for i, r in enumerate(df.head(top).to_dict("records"), 1)
     ]
     return MOHHotspotsResponse(week=week, listed=len(df), moh_areas=rows)
+
+
+@app.get("/national/trend", response_model=list[NationalPoint])
+def national_trend(con: Con) -> list[NationalPoint]:
+    df = dd.national_totals(con)
+    return [NationalPoint(week=str(r["iso_week_key"]), week_start=r["week_start"].date(), cases=int(r["cases"]))
+            for r in df.to_dict("records")]
+
+
+@app.get("/districts/{district}/rain", response_model=list[RainPoint])
+def district_rain(con: Con, district: str, since: date) -> list[RainPoint]:
+    df = dd.district_rain(con, district.lower(), since.isoformat())
+    if df.empty:
+        raise HTTPException(404, f"Unknown district or no weather since {since}: {district}")
+    return [RainPoint(week_start=r["week_start"].date(), rain_mm=_none_if_nan(r["rain_mm"]))
+            for r in df.to_dict("records")]
+
+
+@app.get("/model/forecast-vs-actual", response_model=list[AccuracyPoint])
+def forecast_vs_actual(con: Con, horizon: Annotated[int, Query(ge=2, le=4, multiple_of=2)] = 4) -> list[AccuracyPoint]:
+    df = dd.forecast_vs_actual(con, horizon=horizon)
+    return [AccuracyPoint(target_week_end=r["target_week_end"], actual=int(r["actual"]), forecast=float(r["forecast"]),
+                          naive=float(r["naive"]), regions=int(r["regions"]))
+            for r in df.to_dict("records")]
+
+
+@app.get("/geo/districts", response_class=FileResponse)
+def geo_districts() -> FileResponse:
+    """District boundaries for maps: geoBoundaries gbOpen LKA ADM2 (OpenStreetMap, ODbL 1.0), `district` = slug."""
+    return FileResponse(REFERENCE_DIR / "geo" / "lka_districts.geojson", media_type="application/geo+json",
+                        headers={"Cache-Control": "public, max-age=86400"})

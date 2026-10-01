@@ -10,3 +10,5 @@ mlflow/
 mlruns/
 mlartifacts/
 reference/population/*.pdf
+web/node_modules/
+web/dist/

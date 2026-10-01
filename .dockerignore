@@ -13,3 +13,4 @@ mlruns/
 mlartifacts/
 infra/airflow/logs/
 ci_data/
+web/

@@ -1,5 +1,5 @@
 # Runs on every push to main and every pull request.
-# 3 jobs: code quality + unit tests -> full pipeline on sample data  |  Airflow DAG integrity
+# 4 jobs: code quality + unit tests -> full pipeline on sample data  |  Airflow DAG integrity  |  web dashboard build
 name: CI
 
 on:
@@ -66,3 +66,21 @@ jobs:
           pip install "apache-airflow==3.3.2" -r requirements.txt
       - name: DAG tests
         run: pytest tests/test_dags.py -v
+
+  web:
+    name: Web dashboard (type check + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install (exact versions from package-lock.json)
+        run: npm ci
+      - name: Type check + production build
+        run: npm run build
