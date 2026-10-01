@@ -55,7 +55,20 @@ Walk-forward backtest (train on past years only, test each year 2014–2025, 16,
 
 **Out-of-sample 2026 epidemic** (model trained on data to mid-May only; NDCU weeks Jun–Sep 2026): error 48.5 vs 65.9 (−26%) at 2 weeks and 68.0 vs 121.0 (−44%) at 4 weeks. It picked up the **turn after the July peak**; it under-forecast the **start** of the rise. Rain 12–15 weeks earlier is a top feature at 4 weeks, close to the ~3-month lag reported for Gampaha (Withanage et al. 2018). Details: [docs/ml_features.md](docs/ml_features.md).
 
+## Guides
+- [How the whole system works](docs/SYSTEM_GUIDE.md): Telegram alert, API, Airflow, MLflow, retraining, monitoring, data quality, CI
+- [How to read the dashboard](docs/DASHBOARD_GUIDE.md)
+
 ## Run it
+**Quick start: one command (Docker Desktop):**
+```bash
+git clone https://github.com/iiTzIsh/denguewatch-lk && cd denguewatch-lk
+docker compose up -d                  # MLflow → setup (data, dbt, model, forecasts) → dashboard + API
+docker compose logs -f init           # watch setup; "DengueWatch LK is ready" when done
+```
+Then open the dashboard at http://localhost:8501, the API at http://localhost:8000/docs and MLflow at http://localhost:5000.
+Setup ([src/bootstrap.py](src/bootstrap.py)) downloads the WER history, NDCU PDFs and 20 years of weather, runs every data check, trains and registers the model, and makes forecasts. Open-Meteo's free daily limit covers about 450 of the 525 weather downloads, so re-run `docker compose run --rm init --force` the next day to finish. It continues where it stopped, and the system works in the meantime.
+
 **Local (Python 3.11+):**
 ```bash
 python -m venv .venv && .venv\Scripts\activate          # Windows
@@ -68,7 +81,7 @@ pytest
 ```bash
 docker compose run --rm pipeline
 ```
-**Dashboard (Streamlit):**
+**Dashboard (Streamlit):** — how to read it: [docs/DASHBOARD_GUIDE.md](docs/DASHBOARD_GUIDE.md)
 ```bash
 pip install -r requirements-dashboard.txt
 streamlit run dashboard/app.py                            # http://localhost:8501

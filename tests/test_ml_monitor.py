@@ -5,6 +5,7 @@ import json
 from datetime import datetime
 
 import duckdb
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -136,3 +137,29 @@ def test_forecast_vs_actual_prefers_live_model(con_acc):
 def test_health_queries_empty_before_anything_exists():
     c = duckdb.connect()
     assert dd.model_performance(c).empty and dd.forecast_vs_actual(c).empty and dd.latest_drift(c) is None
+
+
+def test_run_drift_skips_empty_features():
+    pytest.importorskip("evidently")
+    df = full_features()
+    df["month"] = df["week_end"].dt.month
+    ref, cur = monitor.windows(df, current_weeks=26, reference_years=4)
+    ref = ref.assign(rain_w0_mm=np.nan, temp_mean_4w_c=np.nan)          # e.g. weather backfill unfinished
+    summary, _ = monitor.run_drift(ref, cur)
+    assert "rain_w0_mm" not in json.loads(summary["drifted_features"])
+    assert summary["n_features"] == len(monitor.model_matrix(cur).columns) - 1 - 2   # minus month, minus 2 empty
+
+
+def test_run_drift_refuses_when_almost_nothing_to_compare():
+    pytest.importorskip("evidently")
+    df = full_features()
+    df["month"] = df["week_end"].dt.month
+    ref, cur = monitor.windows(df, current_weeks=26, reference_years=4)
+    empty = ref.copy()
+    for c in monitor.model_matrix(ref).columns:
+        if c in empty.columns and c != "month":
+            empty[c] = np.nan
+    empty["cases"] = np.nan
+    empty["cases_mean_4w"] = np.nan
+    with pytest.raises(monitor.NotEnoughData):
+        monitor.run_drift(empty, cur)

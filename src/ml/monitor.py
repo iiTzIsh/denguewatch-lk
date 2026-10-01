@@ -50,6 +50,7 @@ DRIFT_SHARE = 0.60           # alarm level for the share of drifted features (ca
 CALIBRATION_YEARS = range(2014, 2026)
 REPORT_DIR = DATA_DIR / "reports" / "drift"
 KEEP_REPORTS = 12
+MIN_FEATURES = 5             # fewer comparable features than this -> skip the check (not meaningful)
 EXCLUDE = {"month"}          # identical by construction (same months) - not informative
 
 DDL = """
@@ -70,6 +71,10 @@ CREATE TABLE IF NOT EXISTS ml.drift_runs (
     checked_at        TIMESTAMP
 );
 """
+
+
+class NotEnoughData(Exception):
+    pass
 
 
 def windows(df: pd.DataFrame, current_weeks: int = CURRENT_WEEKS,
@@ -104,6 +109,14 @@ def run_drift(reference: pd.DataFrame, current: pd.DataFrame) -> tuple[dict[str,
 
     ref_x = model_matrix(reference).drop(columns=list(EXCLUDE))
     cur_x = model_matrix(current).drop(columns=list(EXCLUDE))
+    # a feature that is mostly empty in either window can't be compared (e.g. weather backfill still running)
+    usable = [c for c in ref_x.columns if ref_x[c].notna().mean() >= 0.5 and cur_x[c].notna().mean() >= 0.5]
+    skipped = sorted(set(ref_x.columns) - set(usable))
+    if skipped:
+        logger.warning("Drift check skips %d mostly-empty features: %s", len(skipped), ", ".join(skipped))
+    if len(usable) < MIN_FEATURES:
+        raise NotEnoughData(f"only {len(usable)} usable features (need {MIN_FEATURES})")
+    ref_x, cur_x = ref_x[usable], cur_x[usable]
     snapshot = Report([DataDriftPreset(method=DRIFT_METHOD, threshold=DRIFT_THRESHOLD)]).run(cur_x, ref_x)
     parsed = [c for c in (_column_drift(m) for m in snapshot.dict()["metrics"]) if c is not None]
     drifted = sorted(col for col, is_drifted in parsed if is_drifted)
@@ -181,7 +194,11 @@ def main() -> int:
         logger.warning("Not enough rows for a drift check (reference %d, current %d) - skipped",
                        len(reference), len(current))
         return 0
-    summary, snapshot = run_drift(reference, current)
+    try:
+        summary, snapshot = run_drift(reference, current)
+    except NotEnoughData as exc:
+        logger.warning("Drift check skipped: %s", exc)
+        return 0
     summary["report_path"] = str(save_report(snapshot, summary["base_week_end"]))
     summary["checked_at"] = datetime.now(UTC).replace(tzinfo=None)
     with duckdb.connect(str(DB_PATH)) as con:

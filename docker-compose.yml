@@ -1,38 +1,26 @@
-# Pipeline (one-off):  docker compose run --rm pipeline
-# Dashboard:           docker compose up -d dashboard   ->  http://localhost:8501
-# API:                 docker compose up -d api         ->  http://localhost:8000/docs
-# MLflow:              docker compose up -d mlflow      ->  http://localhost:5000
+# DengueWatch LK - ONE COMMAND:   docker compose up -d
+#
+#   mlflow     model tracking + registry             http://localhost:5000
+#   init       one-time setup: data -> dbt -> model -> forecasts (src/bootstrap.py), then exits
+#   dashboard  starts after init finished            http://localhost:8501
+#   api        starts after init finished            http://localhost:8000/docs
+#
+# Watch setup progress:   docker compose logs -f init
+# Re-run setup:           docker compose run --rm init --force
+# One-off pipeline run:   docker compose run --rm pipeline
+# Weekly automation:      docker compose -f docker-compose.airflow.yml up -d   (Airflow, separate stack)
+
+x-app: &app
+  image: denguewatch-app
+  volumes:
+    - ./data:/app/data
+    - ./logs:/app/logs
+  environment: &app-env
+    DW_DATA_DIR: /app/data
+    DW_LOG_DIR: /app/logs
+    MLFLOW_TRACKING_URI: http://mlflow:5000
+
 services:
-  pipeline:
-    build: .                      # build the image from ./Dockerfile
-    image: denguewatch-pipeline
-    volumes:
-      - ./data:/app/data          # your local data folder <-> container /app/data
-      - ./logs:/app/logs
-    environment:
-      DW_DATA_DIR: /app/data
-      DW_LOG_DIR: /app/logs
-
-  dashboard:
-    image: denguewatch-pipeline         # same image as the pipeline (built by the service above)
-    command: ["streamlit", "run", "dashboard/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
-    ports:
-      - "8501:8501"
-    volumes:
-      - ./data:/app/data:ro             # read-only: the dashboard never writes to the warehouse
-    environment:
-      DW_DATA_DIR: /app/data
-
-  api:
-    image: denguewatch-pipeline
-    command: ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./data:/app/data:ro             # read-only
-    environment:
-      DW_DATA_DIR: /app/data
-
   mlflow:
     # Experiment tracking + model registry. Runs/params/metrics -> SQLite, model files -> ./mlflow/artifacts.
     # Clients only talk HTTP to this server (it proxies artifact uploads), so they never need the folder.
@@ -49,4 +37,57 @@ services:
       - ./mlflow:/mlflow
     environment:
       MLFLOW_DISABLE_TELEMETRY: "true"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     restart: unless-stopped
+
+  init:
+    <<: *app
+    build: .
+    entrypoint: ["python", "-m", "src.bootstrap"]   # skips itself if already set up (fast)
+    command: []                                     # extra flags go here: docker compose run --rm init --force
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    restart: "no"
+
+  dashboard:
+    <<: *app
+    command: ["streamlit", "run", "dashboard/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data:ro             # read-only: the dashboard never writes to the warehouse
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  api:
+    <<: *app
+    command: ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data:ro             # read-only
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  pipeline:
+    # one-off weekly-style run by hand (Airflow does this on schedule): docker compose run --rm pipeline
+    <<: *app
+    build: .
+    command: ["python", "-m", "src.pipeline"]
+    profiles: ["manual"]
+    depends_on:
+      mlflow:
+        condition: service_healthy

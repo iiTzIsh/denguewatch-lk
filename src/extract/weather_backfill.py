@@ -50,6 +50,10 @@ def plan(from_year: int, last_day: date) -> list[tuple[str, str, str]]:
     return todo
 
 
+MAX_CONSECUTIVE_FAILURES = 5    # 5 failures in a row = API unreachable / no internet -> stop, don't grind 500 calls
+UNREACHABLE = 4                 # exit code
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--from-year", type=int, default=2006)
@@ -62,15 +66,22 @@ def main() -> None:
     logger.info("Backfill %d -> %s: %d of %d chunks still to download", args.from_year, last_day, len(todo), total)
 
     failed = []
+    in_a_row = 0
     for i, (district, start, end) in enumerate(todo, 1):
         try:
             run_district(district, start, end, WEATHER_BRONZE_DIR)
+            in_a_row = 0
         except RateLimitError:
             logger.error("Daily limit reached after %d chunks. Re-run this command later to resume.", i - 1)
             raise SystemExit(3) from None
         except WeatherAPIError:
             logger.exception("Chunk failed: %s %s..%s (will retry on next run)", district, start, end)
             failed.append((district, start))
+            in_a_row += 1
+            if in_a_row >= MAX_CONSECUTIVE_FAILURES:
+                logger.error("%d chunks failed in a row - Open-Meteo unreachable? Stopping; re-run later to resume.",
+                             in_a_row)
+                raise SystemExit(UNREACHABLE) from None
         if i % 25 == 0:
             logger.info("Progress: %d / %d", i, len(todo))
         time.sleep(PAUSE_BETWEEN_CALLS_S)

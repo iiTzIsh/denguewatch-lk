@@ -8,3 +8,8 @@ data/
 logs/
 scratch/
 .env
+mlflow/
+mlruns/
+mlartifacts/
+infra/airflow/logs/
+ci_data/
