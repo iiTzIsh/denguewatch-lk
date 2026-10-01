@@ -34,4 +34,9 @@ with DAG(
         bash_command=f"cd {PROJECT} && python -m src.transform.ndcu_parse",
         retries=0,   # a validation failure won't fix itself - check data/quarantine/ndcu/
     )
-    download >> parse
+    parse_moh = BashOperator(
+        task_id="parse_moh_tables",
+        bash_command=f"cd {PROJECT} && python -m src.transform.ndcu_moh_parse",
+        retries=0,   # page 2: high-risk MOH areas; failures -> data/quarantine/ndcu_moh/
+    )
+    download >> parse >> parse_moh

@@ -98,6 +98,16 @@ streamlit run dashboard/app.py          # opens http://localhost:8501
 **Today:** Gampaha 218 (−6), Colombo 207 (−15), **Kandy 174 (+16)**, Kegalle 69 (+11), **Galle 69 (+22)**.
 → The two biggest districts are **falling**, and Kandy, Kegalle and Galle are **rising**. That's the "mixed" picture behind the flat national total.
 
+### 3.4b High-risk MOH areas (expander)
+
+Click **"High-risk MOH areas"** to see the smaller health areas inside the districts. These come from page 2 of the NDCU PDF.
+
+- **NDCU only lists high-risk areas.** If an area isn't in the list, it wasn't high-risk that week. It doesn't mean zero cases.
+- **"vs last week"** compares with last week's number as printed in this same report. NDCU sometimes corrects old numbers later.
+- **"Split from (unverified)"** shows the older area that a newer area was split from, for 5 areas (e.g. Kesbewa from Piliyandala). This comes from the lk_dengue project. The official split dates are not published.
+
+**Practical example:** at the 2026-W27 peak, 175 MOH areas were listed, and the top one was **Biyagama (Gampaha), 303 cases**. In 2026-W37 only 34 were listed, and the top one was Pugoda (Dompe) with 38. Use this list to see which **parts** of a district are driving its total.
+
 ### 3.5 National weekly cases
 
 ![National and district trends](images/dashboard_2_trends.png)
@@ -248,6 +258,7 @@ uvicorn src.api.main:app --reload       # then open http://localhost:8000/docs
 | `/hotspots?week=2026-W37&top=5` | Top districts (same as Top 10) |
 | `/districts/gampaha/trend` | The district trend chart's data |
 | `/forecast?top=5` | The forecast table |
+| `/moh/hotspots?week=2026-W37` | The high-risk MOH areas list |
 | `/model/health` | The model health tiles |
 
 In the `/docs` page, click an endpoint → **Try it out** → **Execute**.

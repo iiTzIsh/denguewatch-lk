@@ -42,3 +42,10 @@ def test_drift_triggers_retrain():
     trigger = dag.get_task("trigger_retrain")
     assert trigger.upstream_task_ids == {"drift_detected"}
     assert trigger.trigger_dag_id == "retrain_monthly"
+
+
+def test_ndcu_dag_parses_moh_tables_after_district_tables():
+    bag = DagBag(dag_folder=str(Path(__file__).parents[1] / "dags"))
+    dag = bag.dags["ndcu_ingest_weekly"]
+    assert dag.get_task("parse_pdfs").upstream_task_ids == {"download_pdfs"}
+    assert dag.get_task("parse_moh_tables").upstream_task_ids == {"parse_pdfs"}

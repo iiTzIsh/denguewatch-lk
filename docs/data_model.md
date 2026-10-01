@@ -37,6 +37,6 @@ erDiagram
 |---|---|---|
 | Bronze | raw CSV / HTML / PDF | `data/bronze/` |
 | Silver | `weather_daily`, `weather_weekly`, `dim_district` (reference) | DuckDB `main` schema |
-| Gold (dbt) | `dim_epi_week`, `dim_district`, `fact_weather_weekly`, `dim_region` (SCD2, Python) | DuckDB `gold` schema |
+| Gold (dbt) | `dim_epi_week`, `dim_district`, `fact_weather_weekly`, `fact_dengue_moh_weekly`, `dim_region` (SCD2 of MOH areas, Python - see [moh_regions.md](moh_regions.md)) | DuckDB `gold` schema |
 
 ML training table: `gold.mart_ml_features` (RDHS x WER week) - see [ml_features.md](ml_features.md).

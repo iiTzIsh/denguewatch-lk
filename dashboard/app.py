@@ -70,6 +70,12 @@ def load_model_health() -> tuple[pd.DataFrame, pd.DataFrame, dict | None]:
         return dd.model_performance(con), dd.forecast_vs_actual(con, horizon=4), dd.latest_drift(con)
 
 
+@st.cache_data(ttl=600)
+def load_moh(week: str) -> pd.DataFrame:
+    with dd.connect() as con:
+        return dd.moh_hotspots(con, week)
+
+
 @st.cache_data
 def load_geojson() -> dict:
     return json.loads((REFERENCE_DIR / "geo" / "lka_districts.geojson").read_text(encoding="utf-8"))
@@ -198,6 +204,27 @@ with right:
         },
     )
     st.caption("Rain 2 weeks earlier: mosquitoes need standing water and ~1-3 weeks to breed.")
+
+# ---------- MOH level (page 2 of the NDCU update: high-risk MOH areas only) ----------
+moh = load_moh(week)
+with st.expander(f"High-risk MOH areas - {week} ({len(moh)} listed by NDCU)", expanded=False):
+    if moh.empty:
+        st.info("No MOH-level data for this week. Run `python -m src.pipeline` (parses page 2 of each NDCU PDF).")
+    else:
+        mv = pd.DataFrame({
+            "MOH area": moh["moh_area"],
+            "District": moh["district"].str.replace("_", " ").str.title(),
+            "Cases": moh["cases_this_week"],
+            "vs last week": moh["change_vs_prev_week"],
+            "Split from (unverified)": moh["parent_moh_area"].fillna(""),
+        })
+        st.dataframe(mv, hide_index=True, width="stretch", height=420,
+                     column_config={"Cases": st.column_config.NumberColumn(format="%d"),
+                                    "vs last week": st.column_config.NumberColumn(format="%+d")})
+        st.caption("NDCU lists only HIGH-RISK MOH areas each week - an area not listed was not high-risk, "
+                   "not zero cases. 'vs last week' uses last week's number as printed in this report. "
+                   "'Split from': newer MOH areas and their parent area per the lk_dengue project; official "
+                   "split dates are not published. Region history: gold.dim_region (SCD Type 2).")
 
 # ---------- national trend ----------
 st.subheader("National weekly cases")

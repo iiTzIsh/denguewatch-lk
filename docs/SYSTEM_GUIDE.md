@@ -12,12 +12,13 @@ Nobody has to press anything. Airflow runs this by itself (Sri Lanka time):
 
 ```
 06:00  wer_ingest_weekly     check the Epidemiology Unit site for new WER reports (site often down → isolated)
-06:30  ndcu_ingest_weekly    download new NDCU weekly PDFs → read the table → check vs printed Total
+06:30  ndcu_ingest_weekly    download new NDCU weekly PDFs → read the district table → check vs printed Total
+                             → read the high-risk MOH table (page 2)
                              (bad PDF → quarantine folder, never loaded)
 07:00  denguewatch_weekly
          extract_weather       last 35 days of weather for 25 districts (Open-Meteo)
          load_silver           clean tables in DuckDB (newest download wins, no duplicates)
-         scd2_regions          region history table
+         scd2_regions          MOH area history table (SCD2, from page 2 of the NDCU PDFs)
          dbt_build             gold tables + ~95 automatic data checks  ← any failed check STOPS here
          ├─ dbt_docs           documentation + lineage graph
          └─ predict_forecasts  champion model forecasts every region 2 and 4 weeks ahead
@@ -124,6 +125,7 @@ uvicorn src.api.main:app --reload            # http://localhost:8000/docs (inter
 | `GET /hotspots?week=2026-W37&top=5` | Top districts by cases |
 | `GET /districts` · `GET /districts/{name}/trend` | District list · weekly cases and rainfall |
 | `GET /forecast?top=5` | Forecast per region with risk level + model version |
+| `GET /moh/hotspots?week=2026-W37&top=10` | High-risk MOH areas NDCU listed that week |
 | `GET /model/health` | Forecast error vs naive + latest drift check |
 
 How it works in practice:

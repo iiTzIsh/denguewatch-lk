@@ -24,6 +24,38 @@ DISTRICTS_CSV = str(REFERENCE_DIR / "districts.csv")
 RDHS_CSV = str(REFERENCE_DIR / "rdhs.csv")
 NDCU_GLOB = str(PARSED_DIR / "ndcu_weekly" / "*.csv")
 WER_GLOB = str(PARSED_DIR / "wer_history" / "*.csv")
+NDCU_MOH_GLOB = str(PARSED_DIR / "ndcu_moh" / "*.csv")
+NDCU_MOH_DDL = """
+CREATE OR REPLACE TABLE ndcu_moh_weekly_cases (
+    iso_year INTEGER, iso_week INTEGER, week_start DATE, week_end DATE, province VARCHAR, district VARCHAR,
+    moh_area VARCHAR, moh_key VARCHAR, cases_prev_week INTEGER, cases_this_week INTEGER,
+    source_file VARCHAR, parsed_at VARCHAR
+)
+"""
+
+
+def load_ndcu_moh(con: duckdb.DuckDBPyConnection, csv_glob: str = NDCU_MOH_GLOB) -> int:
+    """High-risk MOH areas per NDCU week (src.transform.ndcu_moh_parse) -> silver. Newest parse wins."""
+    con.execute(NDCU_MOH_DDL)
+    if not list(Path(csv_glob).parent.glob(Path(csv_glob).name)):
+        logger.info("ndcu_moh_weekly_cases: 0 rows (run python -m src.transform.ndcu_moh_parse)")
+        return 0
+    con.execute(
+        """
+        INSERT INTO ndcu_moh_weekly_cases
+        SELECT iso_year, iso_week, week_start, week_end, province, district, moh_area, moh_key,
+               cases_prev_week, cases_this_week, source_file, parsed_at
+        FROM read_csv(?, header = true, union_by_name = true)
+        QUALIFY row_number() OVER (PARTITION BY week_start, moh_key ORDER BY parsed_at DESC) = 1
+        """,
+        [csv_glob],
+    )
+    row = con.execute("SELECT count(*) FROM ndcu_moh_weekly_cases").fetchone()
+    n = row[0] if row else 0
+    logger.info("ndcu_moh_weekly_cases: %d rows", n)
+    return n
+
+
 POPULATION_CSV = REFERENCE_DIR / "population" / "district_population_2024.csv"
 
 POPULATION_DDL = """
@@ -218,6 +250,7 @@ def main() -> None:
         load_ndcu(con)
         load_wer_history(con)
         load_population(con)
+        load_ndcu_moh(con)
         # empty ML tables so dbt sources + dashboard queries always exist (filled by src.ml.predict / monitor)
         con.execute(FORECAST_DDL)
         con.execute(DRIFT_DDL)

@@ -162,3 +162,22 @@ def latest_drift(con: duckdb.DuckDBPyConnection) -> dict | None:
     except duckdb.CatalogException:
         return None
     return None if df.empty else {str(k): v for k, v in df.iloc[0].to_dict().items()}
+
+
+MOH_SQL = """
+SELECT f.moh_area, f.district_sk, d.district, f.cases_this_week, f.cases_prev_week, f.change_vs_prev_week,
+       f.parent_moh_area, r.boundary_note
+FROM gold.fact_dengue_moh_weekly f
+JOIN gold.dim_district d USING (district_sk)
+JOIN gold.dim_region r USING (region_sk)
+WHERE f.iso_week_key = ?
+ORDER BY f.cases_this_week DESC
+"""
+
+
+def moh_hotspots(con: duckdb.DuckDBPyConnection, week: str) -> pd.DataFrame:
+    """High-risk MOH areas NDCU listed for an ISO week (page 2 of the PDF). Empty if none / not built yet."""
+    try:
+        return con.execute(MOH_SQL, [week]).df()
+    except duckdb.CatalogException:
+        return pd.DataFrame()

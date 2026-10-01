@@ -35,7 +35,7 @@ NDCU website          ─┘    retries · logging ·          ↓  load + valid
 | **Extraction** | Open-Meteo archive API for all **25 districts** (centroids from geoBoundaries/OSM), pinned to **ERA5 (era5_seamless)** for a consistent 2006→now series with rainfall, >5% missing values rejects a pull, resumable year-chunked backfill that stops cleanly on rate limits, retries/backoff, `fetched_at` lineage; WER listing scraper (robots.txt check, caching, regex parsing of epi weeks) |
 | **Silver** | Multi-file load into DuckDB, **newest-pull-wins** de-duplication for overlapping pulls, orphan (referential) check |
 | **Epi weeks** | Sri Lankan epidemiological weeks run **Saturday → Friday**; calendar dimension 2006–2027 validated against WER dates |
-| **SCD Type 2** | Region dimension built from dated reference snapshots (hash change detection, point-in-time joins, idempotent, out-of-order guard) — *currently demo data* |
+| **SCD Type 2** | MOH region dimension built from the 233 MOH areas **observed** in NDCU PDFs (page-2 table parser): hash change detection, district change only when confirmed in 2 reports, point-in-time joins, incremental, out-of-order guard ([docs](docs/moh_regions.md)) |
 | **Gold (dbt)** | `dbt-duckdb` staging + marts, **80+ data tests** (unique, not_null, relationships, accepted values, ranges, grain, reconciliation vs silver, no-leakage target alignment) + docs |
 | **ML** | Feature mart in dbt (date-checked lags, rainfall 0–15 weeks back, endemic channel); baselines vs **LightGBM** growth model in a **walk-forward backtest** 2014–2025; every run in **MLflow**; model registry with **champion/challenger** promotion; monthly retrain DAG; weekly **batch scoring** to `ml.forecast_weekly` |
 | **Monitoring** | **Forecast vs actual** vs naive (`gold.mart_forecast_accuracy`, as-of replay for honest history); **Evidently data drift** vs the same season in past years, alarm **calibrated on 2014–2025**; drift automatically triggers a retrain; "Model health" in the dashboard + `GET /model/health` |
@@ -123,10 +123,10 @@ dags/            Airflow DAGs
 dbt/             dbt project (staging + marts + tests)
 src/extract/     weather.py, wer_links.py, wer_pdf.py
 src/load/        DuckDB loading, SQL runner
-src/transform/   NDCU PDF parser, SCD2 region dimension
+src/transform/   NDCU PDF parsers (district + MOH tables), SCD2 region dimension
 src/ml/          features, models, backtest, train (registry), predict (batch scoring), risk rule
 src/api/ · dashboard/ · src/alerts/   serving: FastAPI, Streamlit, Telegram
-reference/       small versioned reference data (districts, MOH snapshots)
+reference/       small versioned reference data (districts, population, MOH parent areas)
 infra/airflow/   Airflow image (dbt in its own virtualenv)
 tests/           pytest
 docs/            data model, source notes, design decisions
@@ -139,13 +139,13 @@ docs/            data model, source notes, design decisions
 | [Census of Population and Housing 2024](https://www.statistics.gov.lk/Resource/en/Population/CPH_2024/CPH2024_Final_Eng.pdf) | District population → cases per 100,000 | Dept. of Census and Statistics, Final Report (10 Apr 2026), Table 3.2. Read from the PDF and checked against the printed totals |
 | [geoBoundaries](https://github.com/wmgeolab/geoBoundaries) | District boundaries → centroids | gbOpen LKA ADM2, from OpenStreetMap · ODbL 1.0 |
 | [Epidemiology Unit – WER](https://www.epid.gov.lk/weekly-epidemiological-report) | Original WER PDFs | Our scraper is ready; site returning HTTP 500 since 28 Sep 2026 |
-| [NDCU](https://www.dengue.health.gov.lk/) | Weekly cases per RDHS (2026) | Weekly update PDFs, parsed + validated against printed totals; also the live case feed for forecasts after the WER history ends |
+| [NDCU](https://www.dengue.health.gov.lk/) | Weekly cases per RDHS (2026) | Weekly update PDFs (district table + high-risk MOH table), parsed + validated against printed totals; also the live case feed for forecasts after the WER history ends |
 | [denguedatahub](https://github.com/thiyangt/denguedatahub) (Talagala) | **Weekly dengue history 2007–2026** per RDHS, from the Epidemiology Unit's WER | R package data, GPL-3, pinned commit; cross-checked against NDCU (ADR 0002) |
 
 ## Roadmap
 - [x] Phase 0 – Foundations: tested extractors, DuckDB, Docker, Airflow, dbt
 - [x] Phase 1 – Ingestion: district coordinates, weather backfill 2006→now, NDCU PDFs, WER history (denguedatahub)
-- [ ] Phase 2 – Silver: region mapping with real MOH changes (SCD2 uses demo data), population data
+- [x] Phase 2 – Silver: MOH areas from NDCU PDFs (SCD2 from observed data), Census 2024 population
 - [x] Phase 3 – Gold: dengue fact tables (NDCU + WER), ML feature mart (lags, endemic channel)
 - [x] Phase 4 – ML: baselines vs LightGBM, walk-forward backtest, MLflow tracking + registry, champion/challenger, monthly retrain
 - [x] Phase 5 – Serving: Streamlit + Folium map, FastAPI, weekly Telegram alert — all with forecasts

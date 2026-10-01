@@ -216,7 +216,7 @@ A daily **calendar table (`dim_date`)** links each day to both.
 | **Weather at one point per district** | District weather = weather at the district's centre, on a grid of roughly 10–25 km. Big districts have varied weather inside them. |
 | **Reanalysis ≠ rain gauge** | ERA5 is modelled data, which is very consistent but not the same as a local rain gauge |
 | **NDCU history is short** | Only 20 weeks, which is not enough to train a model. **WER history is required.** |
-| **Region changes over time** | Some health areas split (e.g. Kesbewa from Piliyandala). The SCD2 table handles this, but it **currently uses demo data**. |
+| **Region changes over time** | Some health areas split (e.g. Kesbewa from Piliyandala). The SCD2 table is built from the MOH areas observed in the NDCU PDFs; split dates aren't published, so history starts at the first week each area was seen. |
 | **Not a forecast yet** | The dashboard and alert show **current cases**, not predictions. The wording says so honestly. |
 
 ---
@@ -289,12 +289,12 @@ A daily **calendar table (`dim_date`)** links each day to both.
 | Public dashboard hosting | A live link on your CV |
 
 ### Definition of "done" (from the project brief)
-- [ ] Runs weekly end-to-end without manual steps
-- [ ] Multi-year history loaded and validated
-- [ ] SCD2 region dimension handles real MOH changes
-- [ ] Model beats baselines in walk-forward backtest (or honestly explains why not)
+- [x] Runs weekly end-to-end without manual steps
+- [x] Multi-year history loaded and validated
+- [x] SCD2 region dimension handles real MOH changes
+- [x] Model beats baselines in walk-forward backtest (or honestly explains why not)
 - [x] Dashboard + API + weekly alert working
-- [ ] CI/CD, tests, data quality checks, **drift monitoring** in place (CI, tests and quality checks are done)
+- [x] CI/CD, tests, data quality checks, **drift monitoring** in place
 - [ ] Professional README + demo video + LinkedIn post
 
 ---

@@ -210,3 +210,27 @@ models:
           - accepted_values:
               arguments:
                 values: ['high', 'watch', 'normal', 'unknown']
+
+  - name: fact_dengue_moh_weekly
+    description: >
+      High-risk MOH areas per NDCU week (page 2 of the weekly update), joined POINT-IN-TIME to the SCD2 region
+      dimension. Only high-risk areas are listed - missing = not high-risk that week, not zero.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [moh_key, week_start]
+    columns:
+      - name: region_sk
+        description: Version of the MOH area valid that week - must always be found (SCD2 integrity)
+        data_tests: [not_null]
+      - name: district_sk
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_district')
+                field: district_sk
+      - name: cases_this_week
+        data_tests:
+          - not_null
+          - in_range:
+              arguments: {min_value: 0, max_value: 5000}

@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import duckdb
+import pandas as pd
 import pytest
 
-from src.transform.scd2 import apply_snapshot, ensure_table, snapshot_files
+from src.transform.scd2 import apply_snapshot, ensure_table, observed_snapshots, snapshot_files
 
-SNAPS = dict(snapshot_files())  # {date: path} from reference/moh_snapshots
+# SYNTHETIC split scenario (tests/fixtures/moh_snapshots/README.md) - tests the mechanics only
+SNAPS = dict(snapshot_files(Path(__file__).parent / "fixtures" / "moh_snapshots"))
 D1, D2 = date(2025, 1, 1), date(2026, 1, 1)
 
 
@@ -60,3 +63,58 @@ def test_point_in_time_lookup(con):
     q = "SELECT count(*) FROM gold.dim_region WHERE ? >= valid_from AND ? < valid_to"
     assert con.execute(q, [date(2025, 6, 15)] * 2).fetchone()[0] == 2   # before split
     assert con.execute(q, [date(2026, 6, 15)] * 2).fetchone()[0] == 3   # after split
+
+
+# ---------------- observed-data snapshots (the real source) ----------------
+def obs(rows):
+    return pd.DataFrame(rows, columns=["week_start", "moh_area", "district"])
+
+
+W = [date(2026, 6, 1), date(2026, 6, 8), date(2026, 6, 15), date(2026, 6, 22)]
+
+
+def test_new_area_appears_from_its_first_week(con):
+    snaps = observed_snapshots(obs([(W[0], "Piliyandala", "colombo"), (W[1], "Piliyandala", "colombo"),
+                                    (W[1], "Kesbewa", "colombo")]),
+                               pd.DataFrame({"moh_area": ["Kesbewa"], "parent_moh_area": ["Piliyandala"]}))
+    for as_of, snap in snaps:
+        apply_snapshot(con, snap, as_of)
+    rows = con.execute("SELECT moh_key, valid_from, parent_moh_area, is_current FROM gold.dim_region "
+                       "ORDER BY moh_key").fetchall()
+    assert rows == [("kesbewa", W[1], "Piliyandala", True), ("piliyandala", W[0], None, True)]
+
+
+def test_area_off_the_high_risk_list_stays_current(con):
+    for as_of, snap in observed_snapshots(obs([(W[0], "Hanwella", "colombo"), (W[2], "Kesbewa", "colombo")])):
+        apply_snapshot(con, snap, as_of)
+    assert con.execute("SELECT is_current FROM gold.dim_region WHERE moh_key = 'hanwella'").fetchall() == [(True,)]
+
+
+def test_one_off_district_misprint_is_not_applied(con):
+    rows = [(W[0], "Katuwana", "hambantota"), (W[1], "Katuwana", "matara"), (W[2], "Katuwana", "hambantota")]
+    for as_of, snap in observed_snapshots(obs(rows)):
+        apply_snapshot(con, snap, as_of)
+    assert con.execute("SELECT district FROM gold.dim_region").fetchall() == [("hambantota",)]   # one version
+
+
+def test_confirmed_district_change_creates_a_version(con):
+    rows = [(W[0], "X", "matara"), (W[1], "X", "galle"), (W[2], "X", "galle")]
+    for as_of, snap in observed_snapshots(obs(rows)):
+        apply_snapshot(con, snap, as_of)
+    hist = con.execute("SELECT district, valid_from, valid_to FROM gold.dim_region ORDER BY valid_from").fetchall()
+    assert hist == [("matara", W[0], W[2]), ("galle", W[2], date(9999, 12, 31))]
+
+
+def test_spelling_variants_are_one_area(con):
+    rows = [(W[0], "Bope Poddala", "galle"), (W[1], "Bope-Poddala", "galle"), (W[2], "BopePoddala", "galle")]
+    for as_of, snap in observed_snapshots(obs(rows)):
+        apply_snapshot(con, snap, as_of)
+    assert con.execute("SELECT count(*) FROM gold.dim_region").fetchone()[0] == 1
+
+
+def test_old_demo_table_is_migrated():
+    c = duckdb.connect()
+    c.execute("CREATE SCHEMA gold; CREATE TABLE gold.dim_region (region_sk VARCHAR, moh_area VARCHAR)")
+    ensure_table(c)
+    cols = {r[0] for r in c.execute("DESCRIBE gold.dim_region").fetchall()}
+    assert "moh_key" in cols

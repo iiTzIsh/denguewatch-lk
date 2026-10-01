@@ -9,6 +9,7 @@ Endpoints:
   GET /districts                       the 25 districts
   GET /districts/{district}/trend      weekly cases (+ rainfall) for one district
   GET /forecast?top=5                  2- and 4-week case forecasts per region with risk level (@champion model)
+  GET /moh/hotspots?week=2026-W37&top=10   high-risk MOH areas NDCU listed that week (page 2 of the PDF)
   GET /model/health                    forecast vs actual (vs naive) per model + latest data-drift check
 """
 from __future__ import annotations
@@ -91,6 +92,23 @@ class ForecastResponse(BaseModel):
     regions: list[ForecastRegion]
     risk_levels: str = ("high: forecast >= outbreak level | watch: >= 80% of it | normal | "
                         "unknown: not enough history. Outbreak level = usual level for that region and time of year.")
+    disclaimer: str = DISCLAIMER
+
+
+class MOHHotspot(BaseModel):
+    rank: int
+    moh_area: str
+    district: str
+    cases: int
+    change_vs_prev_week: int
+    split_from: str | None          # parent MOH area (lk_dengue mapping, unverified)
+
+
+class MOHHotspotsResponse(BaseModel):
+    week: str
+    listed: int
+    moh_areas: list[MOHHotspot]
+    note: str = "NDCU lists only high-risk MOH areas; an area not listed was not high-risk, not zero cases."
     disclaimer: str = DISCLAIMER
 
 
@@ -237,3 +255,26 @@ def model_health(con: Con) -> ModelHealth:
                      for r in ({str(k): v for k, v in rec.items()} for rec in perf.to_dict("records"))],
         drift=drift,
     )
+
+
+@app.get("/moh/hotspots", response_model=MOHHotspotsResponse)
+def moh_hotspots(
+    con: Con,
+    week: Annotated[str | None, Query(pattern=r"^\d{4}-W\d{2}$", examples=["2026-W37"])] = None,
+    top: Annotated[int, Query(ge=1, le=200)] = 10,
+) -> MOHHotspotsResponse:
+    available = dd.available_weeks(con)
+    if not available:
+        raise HTTPException(404, "No NDCU data loaded yet")
+    week = week or available[0]
+    df = dd.moh_hotspots(con, week)
+    if df.empty:
+        raise HTTPException(404, f"No MOH-level data for week {week}")
+    rows = [
+        MOHHotspot(rank=i, moh_area=str(r["moh_area"]), district=str(r["district"]), cases=int(r["cases_this_week"]),
+                   change_vs_prev_week=int(r["change_vs_prev_week"]),
+                   split_from=None if r["parent_moh_area"] is None or r["parent_moh_area"] != r["parent_moh_area"]
+                   else str(r["parent_moh_area"]))
+        for i, r in enumerate(df.head(top).to_dict("records"), 1)
+    ]
+    return MOHHotspotsResponse(week=week, listed=len(df), moh_areas=rows)

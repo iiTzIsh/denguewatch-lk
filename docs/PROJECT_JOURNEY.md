@@ -158,7 +158,7 @@ This "bronze → silver → gold" pattern is called the **medallion architecture
 |---|---|
 | Finish the weather backfill | Run `python -m src.extract.weather_backfill` tomorrow |
 | WER history (2006–2024) | Waiting: site returns error 500. **Needed to train the prediction model.** |
-| Real MOH region changes (SCD2) | Currently demo data; replace with verified data |
+| Real MOH region changes (SCD2) | ✅ Done: 233 MOH areas from NDCU page-2 tables (see moh_regions.md) |
 | Population (for cases per 100,000 people) | Not yet sourced |
 
 ---

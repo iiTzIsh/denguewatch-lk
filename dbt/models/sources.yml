@@ -17,6 +17,10 @@ sources:
         description: Parsed NDCU weekly update PDFs. ISO weeks (Monday -> Sunday), one row per RDHS per week.
       - name: district_population
         description: Census 2024 population per district (reference/population/, read from the official report)
+      - name: ndcu_moh_weekly_cases
+        description: >
+          NDCU weekly update page 2 "High risk MOH areas" (src.transform.ndcu_moh_parse). Only HIGH-RISK MOH areas
+          are listed each week - an area missing in a week was not high-risk, not zero cases.
       - name: wer_weekly_cases
         description: >
           WER dengue history 2007->2026 per RDHS, from the denguedatahub R package (pinned commit), itself extracted
