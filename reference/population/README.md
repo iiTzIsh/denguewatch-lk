@@ -9,4 +9,4 @@ https://www.statistics.gov.lk/Resource/en/Population/CPH_2024/CPH2024_Final_Eng.
    - they sum to the national total printed in the report (**21,781,800**)
    - Gampaha = **2,436,142** and Mullaitivu = **122,619**, as stated in the report text
 
-Used for **cases per 100,000 people** at district level (dashboard map, Top 10, API). The forecasts stay per health region (RDHS) in case counts, because the census gives districts, not RDHS. Ampara district = Ampara + Kalmunai RDHS.
+Used for **cases per 100,000 people** at district level (dashboard and API). The forecasts stay per health region (RDHS) in case counts, because the census gives districts, not RDHS. Ampara district = Ampara + Kalmunai RDHS.

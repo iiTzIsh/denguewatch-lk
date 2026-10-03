@@ -6,10 +6,9 @@ requires-python = ">=3.11"
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-extend-exclude = ["dbt", "infra", "scratch", "sql"]
+extend-exclude = ["dbt", "infra"]
 
 [tool.ruff.lint]
-# E/W = style errors, F = real bugs (unused imports, undefined names), I = import order, B = common bug patterns
 select = ["E", "W", "F", "I", "B"]
 
 [tool.mypy]

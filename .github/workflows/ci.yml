@@ -1,5 +1,4 @@
-# Runs on every push to main and every pull request.
-# 4 jobs: code quality + unit tests -> full pipeline on sample data  |  Airflow DAG integrity  |  web dashboard build
+# Lint and unit tests, then the pipeline on sample data and DAG integrity; the web build runs in parallel.
 name: CI
 
 on:
@@ -8,7 +7,7 @@ on:
   pull_request:
 
 env:
-  DO_NOT_TRACK: "true"          # no MLflow usage telemetry from CI
+  DO_NOT_TRACK: "true"          # disables MLflow usage telemetry
 
 jobs:
   lint-and-test:
@@ -24,6 +23,8 @@ jobs:
         run: pip install -r requirements.txt -r requirements-dev.txt -r requirements-api.txt -r requirements-ml.txt
       - name: Lint (ruff)
         run: ruff check .
+      - name: Format check (ruff)
+        run: ruff format --check .
       - name: Type check (mypy)
         run: mypy src
       - name: Unit tests (pytest)

@@ -1,12 +1,5 @@
-"""
-Forecasting models behind ONE small interface, so the backtest treats baselines and ML the same way:
+"""Case forecasters (naive baselines and LightGBM) sharing the fit(train, horizon) / predict(test) interface."""
 
-    model.fit(train_df, horizon)  ->  model
-    model.predict(test_df)        ->  np.ndarray of predicted cases
-
-Baselines need no training, but they still get fit() so they plug into the same walk-forward loop.
-A real ML model is only worth deploying if it beats these.
-"""
 from __future__ import annotations
 
 from typing import Any, Protocol
@@ -51,7 +44,7 @@ class Mean4w:
 
 
 class SeasonalNaive:
-    """Same week last year (falls back to last value when last year is missing)."""
+    """Same week last year, falling back to the last value."""
 
     name = "seasonal_naive"
 
@@ -74,7 +67,7 @@ LGBM_PARAMS: dict[str, Any] = {
     "n_estimators": 400,
     "learning_rate": 0.03,
     "num_leaves": 15,
-    "min_child_samples": 100,     # small trees + big leaves: 26 regions x 20 years is not much data
+    "min_child_samples": 100,  # small trees, big leaves: 26 regions x 20 years is little data
     "subsample": 0.8,
     "subsample_freq": 1,
     "colsample_bytree": 0.8,
@@ -85,12 +78,10 @@ LGBM_PARAMS: dict[str, Any] = {
 
 
 class LightGBMGrowth:
-    """LightGBM that predicts GROWTH: log(cases in h weeks + 1) - log(recent 4-week level + 1).
+    """LightGBM on growth: log1p(cases in h weeks) - log1p(recent 4-week level).
 
-    Why growth instead of raw counts:
-      - one model works for big and small regions (scale-free)
-      - trees cannot predict above the highest value seen in training; a growth rate on top of the
-        current level can, which matters in record years like 2017
+    Growth is scale-free across regions and, unlike raw counts, lets trees forecast above the
+    training maximum (record years such as 2017).
     """
 
     def __init__(self, use_weather: bool = True, params: dict[str, Any] | None = None) -> None:
@@ -114,13 +105,13 @@ class LightGBMGrowth:
         if self.model is None:
             raise RuntimeError("call fit() first")
         booster = self.model.booster_
-        return (pd.DataFrame({"feature": booster.feature_name(),
-                              "gain": booster.feature_importance(importance_type="gain")})
-                .sort_values("gain", ascending=False, ignore_index=True))
+        return pd.DataFrame(
+            {"feature": booster.feature_name(), "gain": booster.feature_importance(importance_type="gain")}
+        ).sort_values("gain", ascending=False, ignore_index=True)
 
 
 MODELS: dict[str, Any] = {
     **BASELINES,
     "lgbm_growth": lambda: LightGBMGrowth(use_weather=True),
-    "lgbm_growth_noweather": lambda: LightGBMGrowth(use_weather=False),   # ablation: what does weather add?
+    "lgbm_growth_noweather": lambda: LightGBMGrowth(use_weather=False),  # weather ablation
 }

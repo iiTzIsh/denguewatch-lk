@@ -2,10 +2,10 @@ version: 2
 
 models:
   - name: dim_epi_week
-    description: Sri Lankan epidemiological weeks (Saturday -> Friday).
+    description: Sri Lankan epidemiological weeks (Saturday-Friday).
     columns:
       - name: epi_week_key
-        description: e.g. 2024-W18
+        description: Epi year and week number, e.g. 2024-W18.
         data_tests: [unique, not_null]
       - name: week_start
         data_tests: [unique, not_null]
@@ -30,7 +30,7 @@ models:
                          'North Central', 'Uva', 'Sabaragamuwa', 'Unknown']
 
   - name: fact_weather_weekly
-    description: Weekly weather per district. Grain = district x epi week.
+    description: Weekly weather per district per epi week.
     data_tests:
       - unique_combination:
           arguments:
@@ -76,7 +76,7 @@ models:
         data_tests: [not_null]
 
   - name: fact_weather_iso_weekly
-    description: Weekly weather per district on ISO weeks (Mon-Sun). Grain = district x ISO week.
+    description: Weekly weather per district per ISO week (Mon-Sun).
     data_tests:
       - unique_combination:
           arguments:
@@ -115,8 +115,8 @@ models:
 
   - name: mart_ndcu_monitoring
     description: >
-      District x ISO week monitoring view - cases, cases per 100,000 (Census 2024), change vs last week,
-      weather and 1-4 week rainfall lags.
+      Monitoring view per district per ISO week: cases, cases per 100,000 (Census 2024), change vs
+      previous week, weather and 1-4 week rainfall lags.
     data_tests:
       - unique_combination:
           arguments:
@@ -132,7 +132,7 @@ models:
               arguments: {min_value: 1}
 
   - name: fact_dengue_wer_weekly
-    description: WER dengue history (2007->2026) per RDHS per reported week - training data for the forecasting model.
+    description: WER dengue history (2007-2026) per RDHS per reported week; training data for the forecasting model.
     data_tests:
       - unique_combination:
           arguments:
@@ -148,8 +148,8 @@ models:
 
   - name: mart_ml_features
     description: >
-      ML training + scoring table. Grain = RDHS x week (WER history, then NDCU weeks after WER ends).
-      Features use only data up to week_end (no leakage); targets = cases 2 and 4 weeks later.
+      ML training and scoring table per RDHS per week (WER history, then NDCU weeks after WER ends).
+      Features use only data up to week_end; targets are cases 2 and 4 weeks later.
       Lags/leads are date-checked; weather windows with a missing day are NULL.
     data_tests:
       - unique_combination:
@@ -189,7 +189,7 @@ models:
               arguments: {min_value: 1, max_value: 12}
 
   - name: mart_forecast_accuracy
-    description: Forecast vs actual per region, horizon and model version, next to the naive forecast (model health).
+    description: Forecast vs actual per region, horizon and model version, alongside the naive forecast.
     data_tests:
       - unique_combination:
           arguments:
@@ -213,15 +213,15 @@ models:
 
   - name: fact_dengue_moh_weekly
     description: >
-      High-risk MOH areas per NDCU week (page 2 of the weekly update), joined POINT-IN-TIME to the SCD2 region
-      dimension. Only high-risk areas are listed - missing = not high-risk that week, not zero.
+      High-risk MOH areas per NDCU week (page 2 of the weekly update), joined point-in-time to the SCD2
+      region dimension. An area missing from a week was not high-risk, not zero cases.
     data_tests:
       - unique_combination:
           arguments:
             columns: [moh_key, week_start]
     columns:
       - name: region_sk
-        description: Version of the MOH area valid that week - must always be found (SCD2 integrity)
+        description: Version of the MOH area valid that week; never null (SCD2 integrity).
         data_tests: [not_null]
       - name: district_sk
         data_tests:

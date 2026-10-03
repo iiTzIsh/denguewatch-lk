@@ -1,5 +1,4 @@
-# Airflow 3.3.2 for DengueWatch LK - trimmed from the official docker-compose.yaml:
-#   LocalExecutor (tasks run inside the scheduler) instead of Celery -> no redis, no worker -> lighter for a laptop.
+# Airflow 3.3.2, trimmed from the official docker-compose.yaml: LocalExecutor, no Redis or Celery workers.
 # Start:  docker compose -f docker-compose.airflow.yml up -d      UI: http://localhost:8080  (airflow / airflow)
 # Stop:   docker compose -f docker-compose.airflow.yml down
 x-airflow-common:
@@ -8,7 +7,7 @@ x-airflow-common:
     context: .
     dockerfile: infra/airflow/Dockerfile
   image: denguewatch-airflow:3.3.2
-  env_file:                       # secrets (e.g. Telegram token) from .env - optional, never committed
+  env_file:                       # optional secrets, e.g. the Telegram token
     - path: .env
       required: false
   environment:
@@ -25,22 +24,21 @@ x-airflow-common:
     AIRFLOW__API_AUTH__JWT_ISSUER: airflow
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
     AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
-    # our pipeline code + settings (src/config.py reads these)
+    # pipeline settings read by src/config.py
     PYTHONPATH: /opt/airflow/project
     DW_DATA_DIR: /opt/airflow/project/data
     DW_LOG_DIR: /opt/airflow/project/logs
-    # MLflow runs in the other compose file (docker compose up -d mlflow) -> reach it through the host
+    # MLflow runs from docker-compose.yml and is reached through the host
     MLFLOW_TRACKING_URI: http://host.docker.internal:5000
     MLFLOW_DISABLE_TELEMETRY: "true"
   extra_hosts:
-    - "host.docker.internal:host-gateway"     # needed on Linux; Docker Desktop (Windows/Mac) has it built in
+    - "host.docker.internal:host-gateway"     # needed on Linux; built into Docker Desktop
   volumes:
     - ./dags:/opt/airflow/dags
     - ./infra/airflow/logs:/opt/airflow/logs
     - ./infra/airflow/config:/opt/airflow/config
     - ./infra/airflow/plugins:/opt/airflow/plugins
     - ./src:/opt/airflow/project/src
-    - ./sql:/opt/airflow/project/sql
     - ./dbt:/opt/airflow/project/dbt
     - ./reference:/opt/airflow/project/reference
     - ./data:/opt/airflow/project/data
@@ -53,7 +51,7 @@ x-airflow-common:
       condition: service_healthy
 
 services:
-  postgres:                       # Airflow's own metadata DB (runs, task states) - NOT our warehouse
+  postgres:                       # Airflow metadata DB, not the warehouse
     image: postgres:16
     environment:
       POSTGRES_USER: airflow
@@ -85,7 +83,7 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  airflow-scheduler:              # decides what runs when + runs tasks (LocalExecutor)
+  airflow-scheduler:              # schedules and runs tasks (LocalExecutor)
     <<: *airflow-common
     command: scheduler
     healthcheck:
@@ -100,7 +98,7 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  airflow-dag-processor:          # reads the files in dags/
+  airflow-dag-processor:          # parses dags/
     <<: *airflow-common
     command: dag-processor
     healthcheck:
@@ -115,7 +113,7 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  airflow-init:                   # one-off: create DB tables + admin user, fix folder permissions
+  airflow-init:                   # one-off: migrate DB, create admin user, fix permissions
     <<: *airflow-common
     entrypoint: /bin/bash
     command:

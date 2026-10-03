@@ -1,4 +1,5 @@
 """Drift windows + parsing + detection, as-of replay (no hindsight), and the model-health queries."""
+
 from __future__ import annotations
 
 import json
@@ -9,8 +10,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src import queries as q
 from src.ml import monitor, replay
-from src.reports import dashboard_data as dd
 from tests.test_ml_backtest import full_features
 
 
@@ -19,8 +20,8 @@ def test_windows_use_same_months_in_the_past():
     df["month"] = df["week_end"].dt.month
     ref, cur = monitor.windows(df, current_weeks=8, reference_years=3)
     assert cur["week_start"].nunique() == 8
-    assert ref["week_start"].max() < cur["week_start"].min()                      # strictly the past
-    assert set(ref["month"]) <= set(cur["month"])                                   # same season only
+    assert ref["week_start"].max() < cur["week_start"].min()  # strictly the past
+    assert set(ref["month"]) <= set(cur["month"])  # same season only
     assert ref["week_start"].min() >= cur["week_start"].min() - pd.DateOffset(years=3)
 
 
@@ -29,7 +30,7 @@ def test_windows_use_same_months_in_the_past():
     [
         ("ValueDrift(column=rain_w0_mm,method=Wasserstein distance (normed),threshold=0.3)", 0.45, True),
         ("ValueDrift(column=rain_w0_mm,method=Wasserstein distance (normed),threshold=0.3)", 0.10, False),
-        ("ValueDrift(column=cases,method=K-S p_value,threshold=0.05)", 0.001, True),   # small p = drift
+        ("ValueDrift(column=cases,method=K-S p_value,threshold=0.05)", 0.001, True),  # small p = drift
         ("ValueDrift(column=cases,method=K-S p_value,threshold=0.05)", 0.40, False),
     ],
 )
@@ -48,34 +49,53 @@ def test_run_drift_detects_a_real_shift():
     ref, cur = monitor.windows(df, current_weeks=26, reference_years=4)
     same, _ = monitor.run_drift(ref, cur)
     shifted_cur = cur.copy()
-    for c in ("rain_w0_mm", "rain_w1_mm", "rain_w2_mm", "rain_w3_mm", "rain_w4_7_mm", "rain_w8_11_mm",
-              "rain_w12_15_mm", "rainy_days_4w", "temp_mean_4w_c", "temp_min_4w_c"):
-        shifted_cur[c] = shifted_cur[c] * 5 + 100                                     # a very different season
+    for c in (
+        "rain_w0_mm",
+        "rain_w1_mm",
+        "rain_w2_mm",
+        "rain_w3_mm",
+        "rain_w4_7_mm",
+        "rain_w8_11_mm",
+        "rain_w12_15_mm",
+        "rainy_days_4w",
+        "temp_mean_4w_c",
+        "temp_min_4w_c",
+    ):
+        shifted_cur[c] = shifted_cur[c] * 5 + 100  # a very different season
     shifted, _ = monitor.run_drift(ref, shifted_cur)
     assert shifted["n_drifted"] > same["n_drifted"]
     assert set(json.loads(shifted["drifted_features"])) >= {"rain_w0_mm", "temp_mean_4w_c"}
 
 
 def summary(week: str, detected: bool) -> dict:
-    return {"base_week_end": pd.Timestamp(week).date(), "current_from": pd.Timestamp(week).date(),
-            "reference_from": pd.Timestamp("2021-01-01").date(), "reference_to": pd.Timestamp("2025-12-31").date(),
-            "n_reference": 500, "n_current": 208, "n_features": 22, "n_drifted": 16 if detected else 3,
-            "drift_share": 0.73 if detected else 0.14, "drift_detected": detected,
-            "drifted_features": json.dumps(["rain_w0_mm"]), "report_path": "x.html",
-            "checked_at": datetime(2026, 9, 30, 8, 0)}
+    return {
+        "base_week_end": pd.Timestamp(week).date(),
+        "current_from": pd.Timestamp(week).date(),
+        "reference_from": pd.Timestamp("2021-01-01").date(),
+        "reference_to": pd.Timestamp("2025-12-31").date(),
+        "n_reference": 500,
+        "n_current": 208,
+        "n_features": 22,
+        "n_drifted": 16 if detected else 3,
+        "drift_share": 0.73 if detected else 0.14,
+        "drift_detected": detected,
+        "drifted_features": json.dumps(["rain_w0_mm"]),
+        "report_path": "x.html",
+        "checked_at": datetime(2026, 9, 30, 8, 0),
+    }
 
 
 def test_write_is_idempotent_and_latest_flag(tmp_path):
     db = tmp_path / "w.duckdb"
-    assert monitor.latest_drift_detected(db) is False                   # no table yet -> never trigger
+    assert monitor.latest_drift_detected(db) is False  # no table yet -> never trigger
     with duckdb.connect(str(db)) as con:
         monitor.write(con, summary("2026-09-13", True))
-        monitor.write(con, summary("2026-09-13", True))                 # same week -> replaced
+        monitor.write(con, summary("2026-09-13", True))  # same week -> replaced
         assert con.execute("SELECT count(*) FROM ml.drift_runs").fetchone()[0] == 1
     assert monitor.latest_drift_detected(db) is True
     with duckdb.connect(str(db)) as con:
         monitor.write(con, {**summary("2026-09-20", False), "checked_at": datetime(2026, 10, 1)})
-        assert dd.latest_drift(con)["n_drifted"] == 3
+        assert q.latest_drift(con)["n_drifted"] == 3
     assert monitor.latest_drift_detected(db) is False
 
 
@@ -96,7 +116,7 @@ def test_replay_trains_only_on_the_past(monkeypatch):
     monkeypatch.setattr(replay.LightGBMGrowth, "fit", spy)
     out = replay.replay_week(df, pd.Timestamp(base))
     for train, h in seen:
-        assert (train["week_end"] + pd.Timedelta(days=7 * h) <= as_of).all()   # every target known by then
+        assert (train["week_end"] + pd.Timedelta(days=7 * h) <= as_of).all()  # every target known by then
     assert set(out["model_name"]) == {"asof-replay"} and len(out) == 2 * df["rdhs"].nunique()
     assert (out["scored_at"] == as_of + pd.Timedelta(days=1)).all()
 
@@ -114,13 +134,15 @@ def con_acc():
           actual_cases, alerted, outbreak_happened, scored_at)""")
     c.execute("ALTER TABLE gold.mart_forecast_accuracy ADD COLUMN abs_error DOUBLE")
     c.execute("ALTER TABLE gold.mart_forecast_accuracy ADD COLUMN naive_abs_error DOUBLE")
-    c.execute("UPDATE gold.mart_forecast_accuracy SET abs_error = abs(pred_cases - actual_cases), "
-              "naive_abs_error = abs(naive_pred_cases - actual_cases)")
+    c.execute(
+        "UPDATE gold.mart_forecast_accuracy SET abs_error = abs(pred_cases - actual_cases), "
+        "naive_abs_error = abs(naive_pred_cases - actual_cases)"
+    )
     return c
 
 
 def test_model_performance(con_acc):
-    perf = dd.model_performance(con_acc).set_index("model_name")
+    perf = q.model_performance(con_acc).set_index("model_name")
     replay_row = perf.loc["asof-replay"]
     assert replay_row["forecasts"] == 2
     assert replay_row["mae"] == pytest.approx((20 + 5) / 2) and replay_row["naive_mae"] == pytest.approx((40 + 5) / 2)
@@ -129,14 +151,14 @@ def test_model_performance(con_acc):
 
 
 def test_forecast_vs_actual_prefers_live_model(con_acc):
-    fva = dd.forecast_vs_actual(con_acc, horizon=4)
-    assert fva.loc[0, "forecast"] == pytest.approx(110.0 + 50.0)     # colombo from the live model, kandy replay
+    fva = q.forecast_vs_actual(con_acc, horizon=4)
+    assert fva.loc[0, "forecast"] == pytest.approx(110.0 + 50.0)  # colombo from the live model, kandy replay
     assert fva.loc[0, "actual"] == pytest.approx(165.0) and fva.loc[0, "regions"] == 2
 
 
 def test_health_queries_empty_before_anything_exists():
     c = duckdb.connect()
-    assert dd.model_performance(c).empty and dd.forecast_vs_actual(c).empty and dd.latest_drift(c) is None
+    assert q.model_performance(c).empty and q.forecast_vs_actual(c).empty and q.latest_drift(c) is None
 
 
 def test_run_drift_skips_empty_features():
@@ -144,10 +166,10 @@ def test_run_drift_skips_empty_features():
     df = full_features()
     df["month"] = df["week_end"].dt.month
     ref, cur = monitor.windows(df, current_weeks=26, reference_years=4)
-    ref = ref.assign(rain_w0_mm=np.nan, temp_mean_4w_c=np.nan)          # e.g. weather backfill unfinished
+    ref = ref.assign(rain_w0_mm=np.nan, temp_mean_4w_c=np.nan)  # e.g. weather backfill unfinished
     summary, _ = monitor.run_drift(ref, cur)
     assert "rain_w0_mm" not in json.loads(summary["drifted_features"])
-    assert summary["n_features"] == len(monitor.model_matrix(cur).columns) - 1 - 2   # minus month, minus 2 empty
+    assert summary["n_features"] == len(monitor.model_matrix(cur).columns) - 1 - 2  # minus month, minus 2 empty
 
 
 def test_run_drift_refuses_when_almost_nothing_to_compare():

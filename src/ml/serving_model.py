@@ -1,15 +1,9 @@
-"""
-The model we ship: ONE MLflow pyfunc that forecasts both horizons.
+"""MLflow pyfunc that forecasts all horizons from feature rows.
 
-    input : rows from src.ml.features.load_features()  (one row per region-week);
-            only the columns in SERVING_KEYS + SERVING_NUMERIC are used (the logged input schema)
-    output: rdhs, week_start, week_end, pred_cases_h2, pred_cases_h4
-
-Why a pyfunc wrapper instead of saving the raw LightGBM booster:
-the feature building + "growth -> cases" conversion travel WITH the model, so the API, dashboard
-and alert all call model.predict(rows) and get case counts - no chance of re-implementing the
-features slightly differently in the serving code (training/serving skew).
+Bundling feature building with the boosters avoids training/serving skew.
+Output columns: rdhs, week_start, week_end, pred_cases_h2, pred_cases_h4.
 """
+
 from __future__ import annotations
 
 from typing import Any

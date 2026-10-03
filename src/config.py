@@ -1,13 +1,8 @@
-"""
-All settings in ONE place. Values come from environment variables, with local defaults.
+"""Project settings, read from environment variables (and an optional .env) with local defaults.
 
-Local:   nothing to set - defaults point inside the project folder.
-Docker:  docker-compose.yml sets DW_DATA_DIR=/app/data etc.
-Cloud:   later, the same variables point at cloud storage - code doesn't change.
-
-Paths are ABSOLUTE (built from PROJECT_ROOT), so scripts work from any working directory
-(Airflow does NOT run your code from the project folder).
+Paths are absolute (built from PROJECT_ROOT) so scripts work from any working directory.
 """
+
 from __future__ import annotations
 
 import os
@@ -17,7 +12,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_dotenv(path: Path = PROJECT_ROOT / ".env") -> None:
-    """Tiny .env reader (KEY=value lines). Real environment variables always win. .env is gitignored."""
+    """Load KEY=value lines from .env; existing environment variables take precedence."""
     if not path.exists():
         return
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -41,23 +36,20 @@ LOG_DIR = _path("DW_LOG_DIR", PROJECT_ROOT / "logs")
 DB_PATH = _path("DW_DB_PATH", DATA_DIR / "denguewatch.duckdb")
 
 BRONZE_DIR = DATA_DIR / "bronze"
-# Weather model is part of the bronze path: raw data from different models is NEVER mixed or overwritten.
-# era5_seamless = ERA5 precipitation + ERA5-Land temperature, one consistent reanalysis for all years.
+# Model is part of the bronze path so raw data from different models is never mixed.
+# era5_seamless = ERA5 precipitation + ERA5-Land temperature, consistent across all years.
 WEATHER_MODEL = os.getenv("DW_WEATHER_MODEL", "era5_seamless")
 WEATHER_BRONZE_DIR = BRONZE_DIR / "weather_district" / WEATHER_MODEL
 WER_BRONZE_DIR = BRONZE_DIR / "wer"
 
-NDCU_BRONZE_DIR = BRONZE_DIR / "ndcu" / "weekly"             # raw weekly update PDFs
-WER_HISTORY_BRONZE_DIR = BRONZE_DIR / "wer_history"            # denguedatahub .rda (WER-derived history)
-PARSED_DIR = DATA_DIR / "parsed"                               # tables extracted from PDFs (-> silver)
-QUARANTINE_DIR = DATA_DIR / "quarantine"                       # files that failed parsing/validation
+NDCU_BRONZE_DIR = BRONZE_DIR / "ndcu" / "weekly"
+WER_HISTORY_BRONZE_DIR = BRONZE_DIR / "wer_history"  # denguedatahub .rda (WER-derived)
+PARSED_DIR = DATA_DIR / "parsed"
+QUARANTINE_DIR = DATA_DIR / "quarantine"  # files that failed parsing/validation
 
-ALERTS_DIR = DATA_DIR / "alerts"                               # remembers which weeks were already sent
+ALERTS_DIR = DATA_DIR / "alerts"  # records which weeks were already sent
 
-REFERENCE_DIR = PROJECT_ROOT / "reference"   # small files, versioned in git
-SQL_DIR = PROJECT_ROOT / "sql"
+REFERENCE_DIR = PROJECT_ROOT / "reference"  # small files, versioned in git
 
-# ---- ML ----
-# MLflow tracking server (docker compose up -d mlflow). Override with MLFLOW_TRACKING_URI (e.g. Databricks later).
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
 MLFLOW_EXPERIMENT = os.getenv("DW_MLFLOW_EXPERIMENT", "denguewatch-forecast")

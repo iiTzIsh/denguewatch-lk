@@ -1,4 +1,4 @@
--- gold total must match silver daily total (weekly rounding allowed: 0.05 mm per week)
+-- gold total must match the silver daily total (0.05 mm per week allowed for rounding)
 with gold_t as (
     select d.district, sum(f.rainfall_mm_total) as gold_mm, count(*) as weeks
     from {{ ref('fact_weather_weekly') }} f join {{ ref('dim_district') }} d using (district_sk)

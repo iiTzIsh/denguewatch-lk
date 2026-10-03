@@ -1,4 +1,5 @@
-"""DAG integrity test - standard in industry CI. Skipped automatically if Airflow isn't installed locally."""
+"""DAG integrity tests; skipped if Airflow isn't installed."""
+
 from __future__ import annotations
 
 from pathlib import Path

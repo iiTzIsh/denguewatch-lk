@@ -1,27 +1,9 @@
+"""Weekly Evidently drift check: last CURRENT_WEEKS weeks vs the same months of prior years.
+
+Writes ml.drift_runs and an HTML report under data/reports/drift/.
+Run:  python -m src.ml.monitor [--calibrate]
 """
-Weekly DATA DRIFT check (Evidently): do the model's inputs this season look like what it learned on?
 
-    current   = model features of the last CURRENT_WEEKS weeks (all regions)
-    reference = the SAME calendar months in the previous REFERENCE_YEARS years
-                (dengue + weather are seasonal: comparing June to the whole year would "drift" every June)
-
-Per feature: normalised Wasserstein distance, drifted if >= 0.3 (Evidently's default 0.1 flagged 22/22
-features even in a normal past year - dengue and weather genuinely differ year to year).
-
-CALIBRATED ALARM: the same check run for every year 2014-2025 (last 8 weeks to mid-September vs the same
-months of the 5 years before) gave drifted shares of 0.23-0.55 in normal years and 0.64 in the 2017
-epidemic (90th percentile 0.59). So drift_detected = share >= DRIFT_SHARE (0.60).
-Re-check with:  python -m src.ml.monitor --calibrate
-
-If drift is detected, the weekly Airflow DAG triggers the retrain DAG (champion/challenger then decides
-whether the new model is actually better).
-
-Outputs
-  ml.drift_runs                          one row per check (DuckDB) - dashboard + Airflow read it
-  data/reports/drift/drift_<date>.html   full interactive Evidently report (latest KEEP_REPORTS kept)
-
-Run:  python -m src.ml.monitor
-"""
 from __future__ import annotations
 
 import argparse
@@ -45,13 +27,14 @@ logger = logging.getLogger(__name__)
 CURRENT_WEEKS = 8
 REFERENCE_YEARS = 5
 DRIFT_METHOD = "wasserstein"
-DRIFT_THRESHOLD = 0.3        # per feature
-DRIFT_SHARE = 0.60           # alarm level for the share of drifted features (calibrated, see docstring)
+DRIFT_THRESHOLD = 0.3  # per feature; Evidently's 0.1 flagged every feature in normal years
+# Calibrated 2014-2025: normal years 0.23-0.55, 2017 epidemic 0.64, 90th percentile 0.59
+DRIFT_SHARE = 0.60
 CALIBRATION_YEARS = range(2014, 2026)
 REPORT_DIR = DATA_DIR / "reports" / "drift"
 KEEP_REPORTS = 12
-MIN_FEATURES = 5             # fewer comparable features than this -> skip the check (not meaningful)
-EXCLUDE = {"month"}          # identical by construction (same months) - not informative
+MIN_FEATURES = 5  # fewer comparable features -> skip the check
+EXCLUDE = {"month"}  # identical by construction
 
 DDL = """
 CREATE SCHEMA IF NOT EXISTS ml;
@@ -77,9 +60,10 @@ class NotEnoughData(Exception):
     pass
 
 
-def windows(df: pd.DataFrame, current_weeks: int = CURRENT_WEEKS,
-            reference_years: int = REFERENCE_YEARS) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Split the feature table into (reference, current) rows - see module docstring."""
+def windows(
+    df: pd.DataFrame, current_weeks: int = CURRENT_WEEKS, reference_years: int = REFERENCE_YEARS
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split into (reference, current); reference uses the same months since data is seasonal."""
     starts = sorted(df["week_start"].unique())
     current_from = pd.Timestamp(starts[-min(current_weeks, len(starts))])
     current = df[df["week_start"] >= current_from]
@@ -93,23 +77,23 @@ def windows(df: pd.DataFrame, current_weeks: int = CURRENT_WEEKS,
 
 
 def _column_drift(metric: dict[str, Any]) -> tuple[str, bool] | None:
-    """Parse one Evidently ValueDrift result -> (column, drifted?)."""
+    """Parse one Evidently ValueDrift result into (column, drifted)."""
     name = str(metric.get("metric_name") or "")
     m = re.match(r"ValueDrift\(column=(?P<col>[^,]+),method=(?P<method>[^,]+),threshold=(?P<thr>[0-9.eE-]+)\)", name)
     if not m or metric.get("value") is None:
         return None
     value, thr = float(metric["value"]), float(m.group("thr"))
-    drifted = value < thr if "p_value" in m.group("method") else value >= thr   # p-value vs distance
+    drifted = value < thr if "p_value" in m.group("method") else value >= thr  # p-value vs distance
     return m.group("col"), drifted
 
 
 def run_drift(reference: pd.DataFrame, current: pd.DataFrame) -> tuple[dict[str, Any], Any]:
-    from evidently import Report  # heavy import: only when the check actually runs
+    from evidently import Report  # heavy import
     from evidently.presets import DataDriftPreset
 
     ref_x = model_matrix(reference).drop(columns=list(EXCLUDE))
     cur_x = model_matrix(current).drop(columns=list(EXCLUDE))
-    # a feature that is mostly empty in either window can't be compared (e.g. weather backfill still running)
+    # mostly-empty features can't be compared (e.g. weather backfill still running)
     usable = [c for c in ref_x.columns if ref_x[c].notna().mean() >= 0.5 and cur_x[c].notna().mean() >= 0.5]
     skipped = sorted(set(ref_x.columns) - set(usable))
     if skipped:
@@ -148,7 +132,7 @@ def save_report(snapshot: Any, base_week_end: object, report_dir: Path = REPORT_
 
 
 def write(con: duckdb.DuckDBPyConnection, summary: dict[str, Any]) -> None:
-    """Idempotent per base week: re-running the check replaces that week's row."""
+    """Replace the row for this base week."""
     con.execute(DDL)
     con.execute("DELETE FROM ml.drift_runs WHERE base_week_end = ?", [summary["base_week_end"]])
     row = pd.DataFrame([summary])
@@ -158,18 +142,17 @@ def write(con: duckdb.DuckDBPyConnection, summary: dict[str, Any]) -> None:
 
 
 def latest_drift_detected(db_path: Path = DB_PATH) -> bool:
-    """Used by the Airflow DAG to decide whether to trigger a retrain. No ML libraries needed."""
+    """Whether the newest drift check flagged drift (used by Airflow to trigger a retrain)."""
     try:
         with duckdb.connect(str(db_path), read_only=True) as con:
-            row = con.execute(
-                "SELECT drift_detected FROM ml.drift_runs ORDER BY checked_at DESC LIMIT 1").fetchone()
+            row = con.execute("SELECT drift_detected FROM ml.drift_runs ORDER BY checked_at DESC LIMIT 1").fetchone()
     except duckdb.Error:
         return False
     return bool(row and row[0])
 
 
 def calibrate(df: pd.DataFrame, years: range = CALIBRATION_YEARS, month_day: str = "09-14") -> pd.DataFrame:
-    """Drift share of each past year (same construction as the live check) -> what is 'normal'."""
+    """Drift share of each past year, using the live check's windows."""
     rows = []
     for y in years:
         reference, current = windows(df[df["week_start"] < pd.Timestamp(f"{y}-{month_day}")])
@@ -191,8 +174,9 @@ def main() -> int:
         return 0
     reference, current = windows(df)
     if len(reference) < 100 or len(current) < 26:
-        logger.warning("Not enough rows for a drift check (reference %d, current %d) - skipped",
-                       len(reference), len(current))
+        logger.warning(
+            "Not enough rows for a drift check (reference %d, current %d) - skipped", len(reference), len(current)
+        )
         return 0
     try:
         summary, snapshot = run_drift(reference, current)
@@ -204,10 +188,19 @@ def main() -> int:
     with duckdb.connect(str(DB_PATH)) as con:
         write(con, summary)
     level = logging.WARNING if summary["drift_detected"] else logging.INFO
-    logger.log(level, "Drift %s: %d/%d features drifted (%.0f%%) - current %s..%s vs same months %s..%s. %s",
-               "DETECTED" if summary["drift_detected"] else "ok", summary["n_drifted"], summary["n_features"],
-               100 * summary["drift_share"], summary["current_from"], summary["base_week_end"],
-               summary["reference_from"], summary["reference_to"], summary["drifted_features"])
+    logger.log(
+        level,
+        "Drift %s: %d/%d features drifted (%.0f%%) - current %s..%s vs same months %s..%s. %s",
+        "DETECTED" if summary["drift_detected"] else "ok",
+        summary["n_drifted"],
+        summary["n_features"],
+        100 * summary["drift_share"],
+        summary["current_from"],
+        summary["base_week_end"],
+        summary["reference_from"],
+        summary["reference_to"],
+        summary["drifted_features"],
+    )
     logger.info("Report: %s", summary["report_path"])
     return 0
 

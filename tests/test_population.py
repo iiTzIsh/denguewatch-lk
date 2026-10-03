@@ -1,4 +1,5 @@
 """Census 2024 population: parsed numbers must pass the report's own printed checks, or nothing is written."""
+
 from __future__ import annotations
 
 import duckdb
@@ -29,7 +30,7 @@ def table_lines(total_ok: bool = True, drop: str | None = None) -> list[str]:
 def test_valid_table_passes():
     df = bp.validate(bp.parse_lines(table_lines()))
     assert len(df) == 25 and df["population"].sum() == 21_781_800
-    assert df.set_index("district").loc["nuwara_eliya", "population"] > 0        # two-word name parsed
+    assert df.set_index("district").loc["nuwara_eliya", "population"] > 0  # two-word name parsed
 
 
 def test_wrong_total_rejected():
@@ -48,7 +49,7 @@ def test_missing_pdf_exit_code(tmp_path):
 
 def test_loader_with_and_without_csv(tmp_path):
     con = duckdb.connect()
-    assert duckdb_load.load_population(con, tmp_path / "missing.csv") == 0       # table exists, empty
+    assert duckdb_load.load_population(con, tmp_path / "missing.csv") == 0  # table exists, empty
     csv = tmp_path / "pop.csv"
     bp.validate(bp.parse_lines(table_lines())).to_csv(csv, index=False)
     assert duckdb_load.load_population(con, csv) == 25

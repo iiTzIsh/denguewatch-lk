@@ -73,7 +73,7 @@ function Change({ n }: { n: number | null }) {
   const up = n > 0;
   return (
     <span className="inline-flex items-center justify-end gap-1">
-      {/* the arrow carries the spoken word itself: a hidden sr-only span here overflowed the table by 1px */}
+      {/* label the arrow itself; an sr-only span here overflowed the table by 1px */}
       {n !== 0 && (
         <svg width="9" height="9" viewBox="0 0 10 10" role="img" aria-label={up ? "up" : "down"}
           className={up ? "text-ember" : "text-ink-3"}>

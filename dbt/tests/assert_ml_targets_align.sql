@@ -1,6 +1,5 @@
--- The h2 target must be the cases of the SAME region's week that ends 14 days (+-3) later,
--- and cases_lag1 the week that ends 7 days (+-3) earlier. Guards against off-by-one / leakage bugs.
--- Returns failing rows.
+-- target_cases_h2 must equal the same region's cases 14 (+-3) days later, and cases_lag1 those
+-- 7 (+-3) days earlier; guards against off-by-one and leakage bugs.
 with f as (select * from {{ ref('mart_ml_features') }})
 select a.rdhs, a.week_start, 'target_h2' as check_name
 from f a

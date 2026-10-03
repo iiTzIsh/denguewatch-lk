@@ -1,7 +1,7 @@
--- GRAIN: one row per RDHS region per ISO week (NDCU weekly updates).
--- Restatements: the NEXT week's PDF re-reports this week's number after delayed reports arrive.
---   cases_first_reported = number in this week's own PDF
---   cases_latest         = the revised number from next week's PDF if we have it, else the first report
+-- Grain: one row per RDHS region per ISO week (NDCU weekly updates).
+-- The next week's PDF restates this week's count once delayed reports arrive:
+--   cases_first_reported = count in this week's own PDF
+--   cases_latest         = restated count from next week's PDF if available, else the first report
 with n as (select * from {{ ref('stg_ndcu_weekly') }})
 select
     n.rdhs,

@@ -1,5 +1,5 @@
--- GRAIN: one row per Sri Lankan epi week (Sat -> Fri), 2006-2027
--- RULE:  epi year = year of the week's Tuesday (>= 4 days in that year). Checked against WER dates in tests/.
+-- Grain: one row per Sri Lankan epi week (Sat-Fri), 2006-2027.
+-- Epi year = year of the week's Tuesday (>= 4 days in that year); checked against WER dates in tests/.
 with weeks as (
     select cast(unnest(generate_series(date '2005-12-31', date '2027-12-25', interval 7 day)) as date) as week_start
 ),

@@ -1,5 +1,5 @@
--- GRAIN: one row per calendar day, 2006-2027.
--- The BRIDGE between week systems: each day -> its Sat->Fri epi week AND its Mon->Sun ISO week.  (docs/decisions/0001)
+-- Grain: one row per calendar day, 2006-2027.
+-- Bridges the week systems: maps each day to its Sat-Fri epi week and Mon-Sun ISO week (docs/decisions/0001).
 with days as (
     select cast(unnest(generate_series(date '2006-01-01', date '2027-12-31', interval 1 day)) as date) as date_day
 )

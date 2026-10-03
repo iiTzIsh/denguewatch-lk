@@ -1,8 +1,8 @@
+"""WER ingest DAG (Mondays 06:00): list WER PDF links into bronze.
+
+Kept separate so an outage of the source site does not block the weekly pipeline.
 """
-DAG: wer_ingest_weekly
-Every Monday 06:00: list WER PDF links (bronze). Separate DAG on purpose:
-if the government site is down (it often is), weather + gold still run.
-"""
+
 from __future__ import annotations
 
 from datetime import timedelta
@@ -23,7 +23,7 @@ with DAG(
     default_args={
         "owner": "ishara",
         "retries": 3,
-        "retry_delay": timedelta(minutes=30),   # flaky source -> wait longer between tries
+        "retry_delay": timedelta(minutes=30),  # source site is often down
         "execution_timeout": timedelta(minutes=15),
     },
     tags=["denguewatch", "wer"],

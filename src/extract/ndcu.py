@@ -1,16 +1,9 @@
+"""Download new NDCU (National Dengue Control Unit) weekly update PDFs into bronze.
+
+Links are discovered by crawling every archive page, since late uploads appear out of week order.
+Run:  python -m src.extract.ndcu        (writes data/bronze/ndcu/weekly/<original name>.pdf)
 """
-NDCU (National Dengue Control Unit) weekly update PDFs -> bronze.
 
-Discovers PDF links on the site (no URL guessing - file names are inconsistent: 'Week-31-1.pdf',
-lower-case 'weekly-dengue-update-...'), downloads only NEW ones. One polite request per page.
-
-The archive (/weekly-report/) is PAGINATED and not strictly by week: reports uploaded late (e.g. 2026
-weeks 18 and 20, uploaded in August) appear on page 2 next to weeks 1-15. So every archive page is
-followed (/weekly-report/page/N/), up to MAX_PAGES.
-
-Run:  python -m src.extract.ndcu
-Out:  data/bronze/ndcu/weekly/<original file name>.pdf
-"""
 from __future__ import annotations
 
 import logging
@@ -29,11 +22,11 @@ from src.log_setup import setup_logging
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://www.dengue.health.gov.lk"
-LISTING_PAGES = [f"{BASE_URL}/", f"{BASE_URL}/weekly-report/"]   # robots.txt allows both
-USER_AGENT = "DengueWatchLK/0.1 (student portfolio project)"
+LISTING_PAGES = [f"{BASE_URL}/", f"{BASE_URL}/weekly-report/"]  # robots.txt allows both
+USER_AGENT = "DengueWatchLK/1.0 (+https://github.com/iiTzIsh/denguewatch-lk)"
 WEEKLY_RE = re.compile(r"weekly-dengue-update-(\d{4})-week-(\d{1,2})", re.IGNORECASE)
 PAGE_RE = re.compile(r"/weekly-report/page/(\d+)/?$")
-MAX_PAGES = 30          # safety cap: never crawl forever if the site's paging breaks
+MAX_PAGES = 30  # safety cap in case the site's paging loops
 PAUSE_S = 2.0
 
 
@@ -49,7 +42,7 @@ def extract_weekly_links(html: str, base_url: str = BASE_URL) -> list[str]:
 
 
 def extract_page_links(html: str, base_url: str = BASE_URL) -> list[str]:
-    """Archive pagination links (/weekly-report/page/N/) on a page, normalised with a trailing slash."""
+    """Archive pagination links (/weekly-report/page/N/), normalised with a trailing slash."""
     soup = BeautifulSoup(html, "html.parser")
     pages: list[str] = []
     for a in soup.find_all("a", href=True):
@@ -61,10 +54,13 @@ def extract_page_links(html: str, base_url: str = BASE_URL) -> list[str]:
     return pages
 
 
-def crawl_listing(fetch: Callable[[str], str | None], start_pages: list[str] = LISTING_PAGES,
-                  max_pages: int = MAX_PAGES) -> list[str]:
-    """Visit the start pages and every archive page they link to; return all weekly PDF links.
-    `fetch(url) -> html | None` does the HTTP (None = page failed), so this is testable without a network."""
+def crawl_listing(
+    fetch: Callable[[str], str | None], start_pages: list[str] = LISTING_PAGES, max_pages: int = MAX_PAGES
+) -> list[str]:
+    """Visit the start pages and every linked archive page; return all weekly PDF links.
+
+    `fetch(url)` returns the page HTML, or None if the page could not be read.
+    """
     queue: list[str] = list(start_pages)
     seen: set[str] = set()
     links: list[str] = []
@@ -87,7 +83,7 @@ def crawl_listing(fetch: Callable[[str], str | None], start_pages: list[str] = L
 
 
 def download_new(session: requests.Session, urls: list[str], dest: Path = NDCU_BRONZE_DIR) -> list[Path]:
-    """Download PDFs we don't have yet (idempotent). Returns the new files."""
+    """Download PDFs not already in `dest`; return the new files."""
     dest.mkdir(parents=True, exist_ok=True)
     new: list[Path] = []
     for url in urls:

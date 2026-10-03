@@ -1,4 +1,4 @@
--- 'change vs previous week' must be empty when the previous week wasn't reported (no comparing across gaps)
+-- change vs previous week must be null when the previous week was not reported
 select m.district, m.iso_week_key
 from {{ ref('mart_ndcu_monitoring') }} m
 left join {{ ref('mart_ndcu_monitoring') }} p

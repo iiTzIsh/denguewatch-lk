@@ -2,7 +2,7 @@ version: 2
 
 models:
   - name: stg_ndcu_weekly
-    description: NDCU weekly cases per RDHS (26 regions) with district. ISO weeks Mon->Sun.
+    description: NDCU weekly cases per RDHS (26 regions) with district; ISO weeks (Mon-Sun).
     data_tests:
       - unique_combination:
           arguments:
@@ -16,7 +16,7 @@ models:
                 to: source('silver', 'dim_rdhs')
                 field: rdhs
       - name: district
-        description: null would mean an RDHS missing from reference/rdhs.csv
+        description: Null means the RDHS is missing from reference/rdhs.csv.
         data_tests: [not_null]
       - name: cases_this_week
         data_tests:

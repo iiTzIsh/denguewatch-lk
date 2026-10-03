@@ -1,17 +1,9 @@
+"""Rebuild past weeks' forecasts as of each week (no hindsight) to seed forecast-accuracy history.
+
+scored_at is base week_end + 1 day, so the live @champion batch stays the latest.
+Run:  python -m src.ml.replay [--weeks 30]
 """
-AS-OF REPLAY: rebuild the forecasts we WOULD have made in past weeks - without hindsight.
 
-For each base week B (the newest N weeks):
-    train LightGBM only on rows whose TARGET week ended on or before B's week_end
-    forecast B -> write to ml.forecast_weekly as model_name='asof-replay', model_version='replay'
-    scored_at = B.week_end + 1 day   (so the live @champion batch always stays the "latest")
-
-Why: forecast-vs-actual monitoring (gold.mart_forecast_accuracy) can start with real history
-instead of waiting months for live forecasts to mature. Same training code as production.
-
-Run:  python -m src.ml.replay               (last 16 base weeks, ~1 minute)
-      python -m src.ml.replay --weeks 30
-"""
 from __future__ import annotations
 
 import argparse
@@ -51,7 +43,7 @@ def main() -> int:
     setup_logging()
 
     df = load_features()
-    weeks = sorted(df["week_start"].unique())[-args.weeks:]
+    weeks = sorted(df["week_start"].unique())[-args.weeks :]
     parts = []
     for w in weeks:
         parts.append(replay_week(df, pd.Timestamp(w)))

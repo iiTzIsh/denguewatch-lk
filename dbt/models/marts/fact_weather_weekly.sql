@@ -1,4 +1,4 @@
--- GRAIN: one row per district per epi week
+-- Grain: one row per district per epi week.
 select
     coalesce(d.district_sk, '-1')         as district_sk,
     e.epi_week_key,

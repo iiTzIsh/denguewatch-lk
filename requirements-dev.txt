@@ -1,4 +1,4 @@
-# tools for developing + CI (not needed to RUN the pipeline)
+# Development and CI tools
 ruff==0.15.11
 mypy>=1.10
 types-requests

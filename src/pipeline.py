@@ -1,10 +1,9 @@
-"""
-Run the whole local pipeline in order - one command (Airflow runs the same steps as separate tasks).
-Ends with batch forecasts from the @champion model if MLflow is running (skipped with a warning otherwise).
+"""Run the local pipeline end to end, finishing with @champion forecasts if MLflow is available.
 
-Run:  python -m src.pipeline                       (silver -> SCD2 -> dbt build, using existing bronze)
-      python -m src.pipeline --fetch --start 2024-01-01 --end 2024-12-31   (also re-pull weather)
+Run:  python -m src.pipeline                                          (from existing bronze)
+      python -m src.pipeline --fetch --start 2024-01-01 --end 2024-12-31   (re-extract first)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -19,12 +18,12 @@ from src.log_setup import setup_logging
 
 logger = logging.getLogger(__name__)
 
-DBT_BIN = os.getenv("DW_DBT_BIN", "dbt")   # Airflow image sets this to its dbt virtualenv
+DBT_BIN = os.getenv("DW_DBT_BIN", "dbt")  # the Airflow image points this at its dbt virtualenv
 DBT_ARGS = ["--project-dir", str(PROJECT_ROOT / "dbt"), "--profiles-dir", str(PROJECT_ROOT / "dbt")]
 
 
 def run_step(name: str, cmd: list[str]) -> None:
-    """Run one step as its own process (like an Airflow task). Stop the pipeline on failure."""
+    """Run one step as a subprocess; exit with its return code on failure."""
     t0 = time.perf_counter()
     logger.info("STEP START %s", name)
     result = subprocess.run(cmd, cwd=PROJECT_ROOT)
@@ -48,8 +47,9 @@ def main() -> None:
 
     setup_logging()
     if args.fetch:
-        run_step("extract weather",
-                 py("src.extract.weather", "--start", args.start, "--end", args.end, "--district", "all"))
+        run_step(
+            "extract weather", py("src.extract.weather", "--start", args.start, "--end", args.end, "--district", "all")
+        )
         run_step("extract NDCU PDFs", py("src.extract.ndcu"))
         run_step("extract WER history (pinned)", py("src.extract.wer_history"))
     run_step("parse NDCU PDFs", py("src.transform.ndcu_parse"))
@@ -57,7 +57,7 @@ def main() -> None:
     run_step("load silver", py("src.load.duckdb_load"))
     run_step("scd2 regions", py("src.transform.scd2"))
     run_step("dbt build (gold models + tests)", [DBT_BIN, "build", *DBT_ARGS])
-    # --soft: if MLflow isn't running / no champion yet, warn and carry on (cases-only outputs still work)
+    # --soft: warn instead of failing when MLflow or a champion model is unavailable
     run_step("forecast with @champion model", py("src.ml.predict", "--soft"))
     logger.info("PIPELINE DONE")
 

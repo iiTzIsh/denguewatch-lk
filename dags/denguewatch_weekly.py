@@ -1,13 +1,9 @@
-"""
-DAG: denguewatch_weekly
-Every Monday 07:00 (Sri Lanka time): weather -> silver -> SCD2 -> dbt build (gold + tests)
--> batch forecasts with the @champion model (MLflow) -> Telegram alert;  dbt docs in parallel.
-After the forecasts: data-drift check (Evidently) -> if drift is detected, trigger retrain_monthly now
-(champion/challenger still decides whether the retrained model replaces the current one).
+"""Weekly pipeline DAG (Mondays 07:00 Asia/Colombo).
 
-Each task runs one of our existing modules (same commands you run by hand),
-so the pipeline code stays independent of Airflow.
+Weather -> silver -> SCD2 -> dbt build -> @champion forecasts -> Telegram alert, plus dbt docs.
+A drift check after the forecasts triggers retrain_monthly early when drift is detected.
 """
+
 from __future__ import annotations
 
 from datetime import timedelta
@@ -18,36 +14,36 @@ from airflow.providers.standard.operators.python import ShortCircuitOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import DAG
 
-PROJECT = "/opt/airflow/project"   # mounted by docker-compose.airflow.yml
+PROJECT = "/opt/airflow/project"  # mounted by docker-compose.airflow.yml
 DBT = "/opt/airflow/dbt_venv/bin/dbt"
 DBT_ARGS = "--project-dir dbt --profiles-dir dbt"
 ML_PY = "/opt/airflow/ml_venv/bin/python"
 
-# Run date for this DAG run. Scheduled runs have a logical_date; manual runs may not -> use run_after.
+# Manual runs may have no logical_date; fall back to run_after.
 RUN_DATE = "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}"
 
 
-
 def _drift_detected() -> bool:
-    """True -> continue to the retrain trigger; False -> skip it. Imported lazily (only at run time)."""
+    """Gate for the retrain trigger; imports lazily so DAG parsing stays light."""
     from src.ml.monitor import latest_drift_detected
+
     return latest_drift_detected()
 
 
 default_args = {
     "owner": "ishara",
-    "retries": 2,                              # try again if a task fails ...
-    "retry_delay": timedelta(minutes=5),       # ... after 5 minutes
+    "retries": 2,
+    "retry_delay": timedelta(minutes=5),
     "execution_timeout": timedelta(minutes=30),
 }
 
 with DAG(
     dag_id="denguewatch_weekly",
     description="Weather -> silver -> SCD2 -> dbt gold star schema + tests",
-    schedule="0 7 * * 1",                      # cron: minute 0, hour 7, every Monday
+    schedule="0 7 * * 1",
     start_date=pendulum.datetime(2026, 9, 1, tz="Asia/Colombo"),
-    catchup=False,                             # don't auto-run all the missed past Mondays
-    max_active_runs=1,                         # never two runs writing DuckDB at once
+    catchup=False,
+    max_active_runs=1,  # DuckDB allows a single writer
     default_args=default_args,
     tags=["denguewatch", "weekly"],
 ) as dag:
@@ -65,9 +61,8 @@ with DAG(
     )
     dbt_build = BashOperator(
         task_id="dbt_build",
-        # dbt lives in its own virtualenv in the image (see infra/airflow/Dockerfile)
         bash_command=f"cd {PROJECT} && {DBT} build {DBT_ARGS}",
-        retries=0,                             # data-test failure = real problem, retrying won't fix it
+        retries=0,  # data-test failures are not transient
     )
     dbt_docs = BashOperator(
         task_id="dbt_docs",
@@ -76,13 +71,13 @@ with DAG(
 
     predict = BashOperator(
         task_id="predict_forecasts",
-        # --soft: if MLflow is down or no champion exists, log a warning and let the cases-only alert go out
+        # --soft: without MLflow or a champion, warn and let the cases-only alert go out
         bash_command=f"cd {PROJECT} && {ML_PY} -m src.ml.predict --soft",
     )
 
     send_alert = BashOperator(
         task_id="send_alert",
-        # Telegram token/chat id come from .env (docker-compose env_file). Sends once per week (idempotent).
+        # Credentials come from .env; sends at most once per week.
         bash_command=f"cd {PROJECT} && python -m src.alerts.telegram",
     )
 
@@ -101,7 +96,6 @@ with DAG(
         skip_when_already_exists=True,
     )
 
-    # dependencies: left runs before right; docs and forecasts both wait for a GREEN dbt build
     extract_weather >> load_silver >> scd2_regions >> dbt_build >> [dbt_docs, predict]
     predict >> send_alert
     predict >> monitor_drift >> drift_gate >> retrain

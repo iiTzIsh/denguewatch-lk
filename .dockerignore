@@ -6,7 +6,6 @@ __pycache__/
 .mypy_cache/
 data/
 logs/
-scratch/
 .env
 mlflow/
 mlruns/

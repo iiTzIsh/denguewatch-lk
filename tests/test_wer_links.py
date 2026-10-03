@@ -1,4 +1,5 @@
 """Tests for the WER link scraper - uses fake HTML, no network."""
+
 from __future__ import annotations
 
 from datetime import date

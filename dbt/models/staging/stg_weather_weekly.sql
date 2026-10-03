@@ -1,4 +1,4 @@
--- Staging = light cleanup + consistent names. One row per district per epi week.
+-- One row per district per epi week.
 select
     district,
     epi_week_start,

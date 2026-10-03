@@ -1,19 +1,9 @@
+"""Backtest, fit and register the forecaster in MLflow, promoting it to @champion if it passes the gate.
+
+The gate: positive skill vs naive at every horizon and MAE within 1% of the current champion.
+Run:  python -m src.ml.train
 """
-Train -> evaluate -> register -> promote (champion / challenger).
 
-1. Backtest the challenger config (walk-forward 2014-2025) for every horizon.
-2. Fit the final model on ALL labelled weeks.
-3. Log it to MLflow as a pyfunc and register a new version of `denguewatch-forecaster`.
-4. Promote it to alias @champion ONLY if
-     a) it beats the naive "same as this week" baseline at every horizon  (skill_vs_naive > 0), and
-     b) it is not worse than the current champion by more than 1% MAE at any horizon.
-   Otherwise the version stays registered but is tagged "rejected" with the reason.
-   The old champion keeps alias @previous_champion -> one-command rollback.
-
-Consumers load:  mlflow.pyfunc.load_model("models:/denguewatch-forecaster@champion")
-
-Run:  python -m src.ml.train            (Airflow runs it monthly: dags/retrain_monthly.py)
-"""
 from __future__ import annotations
 
 import logging
@@ -36,8 +26,8 @@ logger = logging.getLogger(__name__)
 
 MODEL_NAME = "denguewatch-forecaster"
 CHAMPION, PREVIOUS = "champion", "previous_champion"
-MAX_WORSE_THAN_CHAMPION = 0.01      # 1% MAE tolerance (noise between retrains)
-MIN_LABELLED_ROWS = 10_000          # data sanity gate: refuse to train on a broken/partial warehouse
+MAX_WORSE_THAN_CHAMPION = 0.01  # tolerates retrain noise
+MIN_LABELLED_ROWS = 10_000  # refuse to train on a broken or partial warehouse
 
 
 def evaluate(df: pd.DataFrame) -> dict[str, float]:
@@ -60,7 +50,7 @@ def fit_final(df: pd.DataFrame) -> dict[int, LightGBMGrowth]:
 
 
 def decide(new: dict[str, float], champion: dict[str, float] | None) -> tuple[bool, str]:
-    """Pure function (easy to unit test): should the new version become champion?"""
+    """Whether the new version should become champion, and why."""
     for h in HORIZONS:
         if new[f"skill_vs_naive_h{h}"] <= 0:
             return False, f"does not beat naive baseline at h={h} (skill {new[f'skill_vs_naive_h{h}']:+.3f})"
@@ -77,7 +67,7 @@ def champion_metrics(client: MlflowClient) -> tuple[str | None, dict[str, float]
     try:
         mv = client.get_model_version_by_alias(MODEL_NAME, CHAMPION)
     except MlflowException:
-        return None, None                                   # no model / no champion yet
+        return None, None  # no champion yet
     if mv.run_id is None:
         return str(mv.version), None
     return str(mv.version), client.get_run(mv.run_id).data.metrics
@@ -92,8 +82,9 @@ def main() -> int:
     df = load_features()
     labelled = int(df[TARGETS[max(HORIZONS)]].notna().sum())
     if labelled < MIN_LABELLED_ROWS:
-        logger.error("Only %d labelled rows (< %d) - refusing to train. Run the pipeline first.",
-                     labelled, MIN_LABELLED_ROWS)
+        logger.error(
+            "Only %d labelled rows (< %d) - refusing to train. Run the pipeline first.", labelled, MIN_LABELLED_ROWS
+        )
         return 2
 
     metrics = evaluate(df)
@@ -104,14 +95,19 @@ def main() -> int:
     with mlflow.start_run(run_name="train_forecaster") as run:
         mlflow.set_tags({"model_family": "ml", "stage": "candidate", "validation": "walk_forward_yearly"})
         mlflow.log_params({f"lgbm_{k}": v for k, v in models[HORIZONS[0]].params.items()})
-        mlflow.log_params({"horizons": ",".join(map(str, HORIZONS)), "train_rows": labelled,
-                           "data_last_week": str(df["week_start"].max().date()),
-                           "test_years": f"{backtest.TEST_YEARS[0]}-{backtest.TEST_YEARS[-1]}"})
+        mlflow.log_params(
+            {
+                "horizons": ",".join(map(str, HORIZONS)),
+                "train_rows": labelled,
+                "data_last_week": str(df["week_start"].max().date()),
+                "test_years": f"{backtest.TEST_YEARS[0]}-{backtest.TEST_YEARS[-1]}",
+            }
+        )
         mlflow.log_metrics(metrics)
         info = mlflow.pyfunc.log_model(
             name="model",
             python_model=wrapper,
-            code_paths=[str(PROJECT_ROOT / "src")],          # the model carries its own feature code
+            code_paths=[str(PROJECT_ROOT / "src")],  # ship feature code with the model
             input_example=sample,
             signature=infer_signature(sample, wrapper.predict(None, sample)),
             pip_requirements=str(PROJECT_ROOT / "requirements-ml.txt"),
@@ -127,11 +123,18 @@ def main() -> int:
         if old_version:
             client.set_registered_model_alias(MODEL_NAME, PREVIOUS, old_version)
         client.set_registered_model_alias(MODEL_NAME, CHAMPION, new_version)
-    logger.info("%s v%s: %s (%s). run=%s", MODEL_NAME, new_version,
-                "PROMOTED to @champion" if promote else "NOT promoted", reason, run.info.run_id)
+    logger.info(
+        "%s v%s: %s (%s). run=%s",
+        MODEL_NAME,
+        new_version,
+        "PROMOTED to @champion" if promote else "NOT promoted",
+        reason,
+        run.info.run_id,
+    )
     for h in HORIZONS:
-        logger.info("  h=%d  MAE %.2f  skill vs naive %+.1f%%", h, metrics[f"mae_h{h}"],
-                    100 * metrics[f"skill_vs_naive_h{h}"])
+        logger.info(
+            "  h=%d  MAE %.2f  skill vs naive %+.1f%%", h, metrics[f"mae_h{h}"], 100 * metrics[f"skill_vs_naive_h{h}"]
+        )
     return 0
 
 

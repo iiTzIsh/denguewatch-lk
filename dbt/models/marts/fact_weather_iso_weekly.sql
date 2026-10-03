@@ -1,4 +1,4 @@
--- GRAIN: one row per district per ISO week (Mon -> Sun) - same daily data as fact_weather_weekly, other week system.
+-- Grain: one row per district per ISO week (Mon-Sun); same daily data as fact_weather_weekly.
 select
     md5(w.district)                         as district_sk,
     d.iso_week_key,

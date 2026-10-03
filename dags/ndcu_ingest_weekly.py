@@ -1,8 +1,8 @@
+"""NDCU ingest DAG (Mondays 06:30): download new weekly PDFs, then parse and validate them.
+
+Files that fail validation are quarantined; denguewatch_weekly (07:00) loads the parsed output.
 """
-DAG: ndcu_ingest_weekly
-Every Monday 06:30: download new NDCU weekly update PDFs -> parse + validate (bad files quarantined).
-The main denguewatch_weekly DAG (07:00) loads whatever has been parsed into silver + dbt.
-"""
+
 from __future__ import annotations
 
 from datetime import timedelta
@@ -32,11 +32,11 @@ with DAG(
     parse = BashOperator(
         task_id="parse_pdfs",
         bash_command=f"cd {PROJECT} && python -m src.transform.ndcu_parse",
-        retries=0,   # a validation failure won't fix itself - check data/quarantine/ndcu/
+        retries=0,  # validation failures are not transient; see data/quarantine/ndcu/
     )
     parse_moh = BashOperator(
         task_id="parse_moh_tables",
         bash_command=f"cd {PROJECT} && python -m src.transform.ndcu_moh_parse",
-        retries=0,   # page 2: high-risk MOH areas; failures -> data/quarantine/ndcu_moh/
+        retries=0,  # page 2 MOH tables; failures go to data/quarantine/ndcu_moh/
     )
     download >> parse >> parse_moh

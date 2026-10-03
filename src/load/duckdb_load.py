@@ -1,10 +1,8 @@
-"""
-Silver load: ALL district weather CSVs -> DuckDB + a weekly table (Sat->Fri epi weeks).
+"""Load reference data, weather and parsed case CSVs into the DuckDB silver layer.
 
 Run:  python -m src.load.duckdb_load
-Out:  data/denguewatch.duckdb  with tables  dim_district, dim_rdhs, weather_daily, weather_weekly,
-      ndcu_weekly_cases, wer_weekly_cases
 """
+
 from __future__ import annotations
 
 import logging
@@ -35,7 +33,7 @@ CREATE OR REPLACE TABLE ndcu_moh_weekly_cases (
 
 
 def load_ndcu_moh(con: duckdb.DuckDBPyConnection, csv_glob: str = NDCU_MOH_GLOB) -> int:
-    """High-risk MOH areas per NDCU week (src.transform.ndcu_moh_parse) -> silver. Newest parse wins."""
+    """Load high-risk MOH areas per NDCU week; the newest parse wins."""
     con.execute(NDCU_MOH_DDL)
     if not list(Path(csv_glob).parent.glob(Path(csv_glob).name)):
         logger.info("ndcu_moh_weekly_cases: 0 rows (run python -m src.transform.ndcu_moh_parse)")
@@ -66,14 +64,16 @@ CREATE OR REPLACE TABLE district_population (
 
 
 def load_population(con: duckdb.DuckDBPyConnection, csv_path: Path = POPULATION_CSV) -> int:
-    """Census 2024 district population (reference/population/). Table always exists; empty until the CSV is
-    built with `python -m src.reference.build_population` -> per-100k rates are then simply NULL."""
+    """Load Census 2024 district population; the table stays empty (rates NULL) if the CSV is absent."""
     con.execute(POPULATION_DDL)
     if not csv_path.exists():
         logger.info("district_population: 0 rows (run python -m src.reference.build_population)")
         return 0
-    con.execute("INSERT INTO district_population SELECT district, population, census_year, source "
-                "FROM read_csv(?, header = true)", [str(csv_path)])
+    con.execute(
+        "INSERT INTO district_population SELECT district, population, census_year, source "
+        "FROM read_csv(?, header = true)",
+        [str(csv_path)],
+    )
     row = con.execute("SELECT count(*) FROM district_population").fetchone()
     n = row[0] if row else 0
     logger.info("district_population: %d rows", n)
@@ -81,7 +81,7 @@ def load_population(con: duckdb.DuckDBPyConnection, csv_path: Path = POPULATION_
 
 
 def load_reference(con: duckdb.DuckDBPyConnection, csv_path: str = DISTRICTS_CSV) -> int:
-    """Reference (lookup) table: one row per district. Small, versioned in git."""
+    """Load the district and RDHS lookup tables."""
     con.execute("CREATE OR REPLACE TABLE dim_district AS SELECT * FROM read_csv_auto(?)", [csv_path])
     con.execute("CREATE OR REPLACE TABLE dim_rdhs AS SELECT * FROM read_csv_auto(?)", [RDHS_CSV])
     row = con.execute("SELECT COUNT(*) FROM dim_district").fetchone()
@@ -91,7 +91,7 @@ def load_reference(con: duckdb.DuckDBPyConnection, csv_path: str = DISTRICTS_CSV
 
 
 def orphan_districts(con: duckdb.DuckDBPyConnection) -> list[str]:
-    """Districts in the weather data with NO match in dim_district (anti-join). Should be empty."""
+    """Return weather districts with no match in dim_district."""
     rows = con.execute(
         """
         SELECT DISTINCT w.district
@@ -104,21 +104,17 @@ def orphan_districts(con: duckdb.DuckDBPyConnection) -> list[str]:
 
 
 def load_weather(con: duckdb.DuckDBPyConnection, csv_glob: str) -> int:
-    """
-    Load every matching CSV into weather_daily.
-    Idempotent: CREATE OR REPLACE rebuilds the table, so re-running never duplicates rows.
-    Overlapping files (weekly Airflow pulls overlap on purpose) -> newest fetched_at wins per district+day.
-    """
+    """Rebuild weather_daily from every matching CSV; the newest fetched_at wins per district and day."""
     con.execute(
         "CREATE OR REPLACE TEMP TABLE raw_weather AS "
         "SELECT * FROM read_csv(?, header = true, union_by_name = true, filename = true, "
-        # explicit schema: an all-empty column can't be mis-detected as text any more
+        # explicit types so an all-empty column is not detected as text
         "types = {'rainfall_mm': 'DOUBLE', 'temperature_2m_mean': 'DOUBLE', "
         "'temperature_2m_max': 'DOUBLE', 'temperature_2m_min': 'DOUBLE', 'date': 'DATE'})",
         [csv_glob],
     )
     cols = {r[0] for r in con.execute("DESCRIBE raw_weather").fetchall()}
-    # older files were saved before we added fetched_at -> treat as "oldest"
+    # files without fetched_at sort as oldest
     fetched = "fetched_at" if "fetched_at" in cols else "CAST(NULL AS VARCHAR)"
     con.execute(
         f"""
@@ -131,7 +127,6 @@ def load_weather(con: duckdb.DuckDBPyConnection, csv_glob: str) -> int:
             temperature_2m_max          AS temp_max_c,
             temperature_2m_min          AS temp_min_c
         FROM raw_weather
-        -- keep ONE row per district + day: the newest fetch wins
         QUALIFY ROW_NUMBER() OVER (
             PARTITION BY district, CAST(date AS DATE)
             ORDER BY {fetched} DESC NULLS LAST, filename DESC
@@ -144,8 +139,8 @@ def load_weather(con: duckdb.DuckDBPyConnection, csv_glob: str) -> int:
     return n
 
 
-# Sri Lanka epi weeks run Saturday -> Friday.
-# DuckDB dayofweek(): Sunday=0 ... Saturday=6  ->  days since last Saturday = (dayofweek + 1) % 7
+# Sri Lanka epi weeks run Saturday to Friday. DuckDB dayofweek() is Sunday=0 .. Saturday=6,
+# so days since the last Saturday = (dayofweek + 1) % 7.
 WEEKLY_SQL = """
 CREATE OR REPLACE TABLE weather_weekly AS
 SELECT
@@ -182,8 +177,10 @@ CREATE OR REPLACE TABLE ndcu_weekly_cases (
 
 
 def load_ndcu(con: duckdb.DuckDBPyConnection, csv_glob: str = NDCU_GLOB) -> int:
-    """Parsed NDCU weeks -> silver. Table always exists (empty if nothing parsed yet) so dbt never breaks.
-    One row per year + ISO week + RDHS: if a week was parsed twice, the newest parse wins."""
+    """Load parsed NDCU weeks; one row per year, ISO week and RDHS, newest parse wins.
+
+    The table is always created, even when empty, so dbt sources exist.
+    """
     con.execute(NDCU_DDL)
     if not list(Path(csv_glob).parent.glob(Path(csv_glob).name)):
         logger.info("ndcu_weekly_cases: 0 rows (no parsed NDCU files yet)")
@@ -193,7 +190,7 @@ def load_ndcu(con: duckdb.DuckDBPyConnection, csv_glob: str = NDCU_GLOB) -> int:
         [csv_glob],
     )
     cols = {r[0] for r in con.execute("DESCRIBE raw_ndcu").fetchall()}
-    total_check = "total_check" if "total_check" in cols else "CAST(NULL AS VARCHAR)"  # files parsed before v2
+    total_check = "total_check" if "total_check" in cols else "CAST(NULL AS VARCHAR)"  # older parses
     con.execute(
         f"""
         INSERT INTO ndcu_weekly_cases
@@ -219,8 +216,7 @@ CREATE OR REPLACE TABLE wer_weekly_cases (
 
 
 def load_wer_history(con: duckdb.DuckDBPyConnection, csv_glob: str = WER_GLOB) -> int:
-    """WER history -> silver. Always exists (empty if not downloaded yet). If several versions were
-    parsed, the newest load wins per week + region."""
+    """Load WER history (empty table if not downloaded); the newest load wins per week and region."""
     con.execute(WER_DDL)
     if not list(Path(csv_glob).parent.glob(Path(csv_glob).name)):
         logger.info("wer_weekly_cases: 0 rows (run python -m src.extract.wer_history)")
@@ -251,7 +247,7 @@ def main() -> None:
         load_wer_history(con)
         load_population(con)
         load_ndcu_moh(con)
-        # empty ML tables so dbt sources + dashboard queries always exist (filled by src.ml.predict / monitor)
+        # create empty ML tables so dbt sources and dashboard queries always resolve
         con.execute(FORECAST_DDL)
         con.execute(DRIFT_DDL)
         orphans = orphan_districts(con)

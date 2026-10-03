@@ -1,15 +1,10 @@
-"""
-WER dengue HISTORY (2007 -> 2026) from the open R package `denguedatahub` (Dr. Thiyanga Talagala, GPL-3),
-dataset `srilanka_weekly_data`, source: Weekly Epidemiological Reports, Epidemiology Unit, Sri Lanka.
+"""Weekly dengue history from `srilanka_weekly_data` in the R package denguedatahub (GPL-3).
 
-Why: the Epidemiology Unit website has been down (HTTP 500), and the forecasting model needs years of history.
-This dataset was extracted from the same WER PDFs. We PIN an exact commit so the input never changes silently,
-validate it, and cross-check it against NDCU (see dbt test assert_wer_vs_ndcu_2025).
-
-Run:  python -m src.extract.wer_history
-Out:  data/bronze/wer_history/srilanka_weekly_data_<commit>.rda     (raw, never edited)
-      data/parsed/wer_history/wer_weekly_<commit>.csv               (validated, -> silver)
+The data is extracted from the Epidemiology Unit's Weekly Epidemiological Reports; the commit is
+pinned and the result validated and cross-checked against NDCU (dbt test assert_wer_vs_ndcu_2025).
+Run:  python -m src.extract.wer_history     (raw .rda -> bronze, validated CSV -> data/parsed)
 """
+
 from __future__ import annotations
 
 import logging
@@ -26,7 +21,7 @@ from src.log_setup import setup_logging
 logger = logging.getLogger(__name__)
 
 REPO = "thiyangt/denguedatahub"
-COMMIT = "86d8070966644ee0b4e5b937c3792d5719390b38"   # pinned (2026-06-21). Change on purpose, never silently.
+COMMIT = "86d8070966644ee0b4e5b937c3792d5719390b38"  # pinned 2026-06-21
 RDA_URL = f"https://raw.githubusercontent.com/{REPO}/{COMMIT}/data/srilanka_weekly_data.rda"
 OUT_DIR = PARSED_DIR / "wer_history"
 EXPECTED_REGIONS = 26
@@ -41,7 +36,7 @@ def slug(name: str) -> str:
 
 
 def rdhs_lookup() -> dict[str, str]:
-    """source spelling -> our rdhs code. Direct slug match first, then reference/rdhs_aliases.csv."""
+    """Map source region spellings to rdhs codes (slug match, then reference/rdhs_aliases.csv)."""
     codes = set(pd.read_csv(REFERENCE_DIR / "rdhs.csv")["rdhs"])
     aliases = pd.read_csv(REFERENCE_DIR / "rdhs_aliases.csv")
     lookup = {c: c for c in codes}
@@ -63,22 +58,24 @@ def download(dest_dir: Path = WER_HISTORY_BRONZE_DIR) -> Path:
 
 
 def read_rda(path: Path) -> pd.DataFrame:
-    import pyreadr  # only needed here
+    import pyreadr
 
     return pyreadr.read_r(str(path))["srilanka_weekly_data"]
 
 
 def tidy(raw: pd.DataFrame) -> pd.DataFrame:
-    """Standardise + validate. Hard errors stop the load; known small gaps only warn."""
+    """Standardise and validate; raise on bad data, warn on missing regions or irregular weeks."""
     lookup = rdhs_lookup()
-    df = pd.DataFrame({
-        "year": raw["year"].astype(int),
-        "week": raw["week"].astype(int),
-        "week_start": pd.to_datetime(raw["start.date"], format="%m/%d/%Y").dt.date,
-        "week_end": pd.to_datetime(raw["end.date"], format="%m/%d/%Y").dt.date,
-        "rdhs": raw["district"].map(lambda n: lookup.get(slug(str(n)))),
-        "cases": raw["cases"],
-    })
+    df = pd.DataFrame(
+        {
+            "year": raw["year"].astype(int),
+            "week": raw["week"].astype(int),
+            "week_start": pd.to_datetime(raw["start.date"], format="%m/%d/%Y").dt.date,
+            "week_end": pd.to_datetime(raw["end.date"], format="%m/%d/%Y").dt.date,
+            "rdhs": raw["district"].map(lambda n: lookup.get(slug(str(n)))),
+            "cases": raw["cases"],
+        }
+    )
     unknown = sorted(set(raw.loc[df["rdhs"].isna(), "district"]))
     if unknown:
         raise WERHistoryError(f"Unknown region names (add to reference/rdhs_aliases.csv): {unknown}")
@@ -88,7 +85,7 @@ def tidy(raw: pd.DataFrame) -> pd.DataFrame:
     if df.duplicated(["year", "week", "rdhs"]).any():
         raise WERHistoryError("duplicate year + week + region rows")
 
-    # facts about each week, kept as columns (not 'fixed') so nothing is invented
+    # irregular weeks are recorded as columns, not corrected
     start = pd.to_datetime(df["week_start"])
     df["week_days"] = (pd.to_datetime(df["week_end"]) - start).dt.days + 1
     df["week_start_day"] = start.dt.day_name()
@@ -112,8 +109,14 @@ def main() -> None:
     out = OUT_DIR / f"wer_weekly_{COMMIT[:7]}.csv"
     df.to_csv(out, index=False)
     by_year = df.groupby("year")["cases"].sum()
-    logger.info("WER history: %d rows, %d-%d, %d regions -> %s", len(df), df["year"].min(), df["year"].max(),
-                df["rdhs"].nunique(), out)
+    logger.info(
+        "WER history: %d rows, %d-%d, %d regions -> %s",
+        len(df),
+        df["year"].min(),
+        df["year"].max(),
+        df["rdhs"].nunique(),
+        out,
+    )
     logger.info("Cases per year: %s", by_year.to_dict())
 
 

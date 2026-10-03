@@ -1,22 +1,19 @@
--- GRAIN: one row per RDHS region per WER week. This is the table the forecasting model trains on.
+-- Grain: one row per RDHS region per WER week; the forecasting model's training table.
 --
--- Rule: every FEATURE uses only data up to the END of that week (week_end) -> no future leakage.
---       TARGETS are the cases 2 and 4 weeks later (what we want to predict).
+-- Features use only data up to week_end (no leakage); targets are cases 2 and 4 weeks later.
+-- Lags/leads are matched by row order per region and checked against real dates (+-3 days),
+-- so a missing week cannot make "2 weeks ago" silently mean 3 weeks ago.
+-- Weather windows count days back from week_end, so they work for Sat-Fri (<=2025) and Mon-Sun (2026)
+-- weeks. A window with any missing day is NULL, never a partial sum.
 --
--- Weeks are matched by position (row order per region), and every lag/lead is checked against the real
--- dates (+-3 days) so a missing week can never make "2 weeks ago" silently mean 3 weeks ago.
--- Weather windows are counted in DAYS back from week_end, so they work for both Sat->Fri (<=2025)
--- and Mon->Sun (2026) weeks. A window with any missing day is NULL (never a partial sum).
---
--- Lags: Sri Lankan studies report different rainfall lags (about 3-4 weeks in Goto et al. 2013,
--- about 3 months in Withanage et al. 2018), so we give the model 0-15 weeks and let the backtest decide.
+-- Rainfall lag windows span 0-15 weeks because Sri Lankan studies disagree (3-4 weeks in Goto et al.
+-- 2013, about 3 months in Withanage et al. 2018); the backtest decides.
 
 {% set case_lags = [1, 2, 3, 4] %}
 
--- CASES = WER history (2006 -> its last week) + NDCU weekly updates AFTER that, so the model can forecast
--- from the newest data. NDCU (latest, restated counts) uses the same 26 regions and Mon->Sun weeks as
--- 2026 WER. Known gap: in the 20 overlapping 2026 weeks, weekly counts differ by -9% to +17% (median +6%,
--- total +3.3%); 2025 cumulative agrees within ~4% - kept as-is and tagged in case_source, never rescaled.
+-- Cases = WER history plus NDCU weekly updates after the last WER week. NDCU (restated counts) uses the
+-- same 26 regions and Mon-Sun weeks as 2026 WER. In the 20 overlapping 2026 weeks, weekly counts differ by
+-- -9% to +17% (median +6%, total +3.3%); 2025 cumulative agrees within ~4%. Tagged in case_source, not rescaled.
 with wer as (
     select rdhs, district, wer_week_key, year, week, week_start, week_end, cases, 'WER' as case_source
     from {{ ref('stg_wer_weekly') }}
@@ -39,14 +36,11 @@ cases as (
     select * from ndcu
 ),
 
--- ENDEMIC CHANNEL ("what is normal for this region at this time of year")
--- For an anchor date A: all weeks of the same region that ended within +-17 days of A minus 1..5 years
--- (up to 5 years x 5 weeks = 25 values, all strictly in the past). Computed for three anchors:
---   offset 0  -> this week          (feature + monitoring)
---   offset 14 -> the week 2 weeks on (outbreak threshold for the h=2 forecast)
---   offset 28 -> the week 4 weeks on (outbreak threshold for the h=4 forecast)
--- Threshold = exp(mean(log(cases+1)) + 2 SD) - 1, at least 10 cases, needs >= 10 past values.
--- Log scale because counts are skewed; the 10-case floor stops tiny regions "breaking out" at 3 cases.
+-- Endemic channel: what is normal for this region at this time of year.
+-- For anchor date A: same-region weeks ending within +-17 days of A minus 1..5 years (up to 25 past values).
+-- Anchors: offset 0 = this week (feature), 14 / 28 = target week (outbreak threshold for h=2 / h=4).
+-- Threshold = exp(mean(log(cases+1)) + 2 SD) - 1, floored at 10 cases, needs >= 10 past values.
+-- Log scale because counts are skewed; the floor stops tiny regions "breaking out" at 3 cases.
 -- Backtest 2014-2025: flags ~8% of weeks overall, ~60% in the 2017 epidemic, 0-2% in quiet years.
 anchors as (
     select c.rdhs, c.week_start, c.week_end + to_days(o.offset_days) as anchor_end, o.offset_days
@@ -117,7 +111,7 @@ sequenced as (
 ),
 
 weather_days as (
-    -- d = days before week_end (0 = the last day of the week)
+    -- d = days before week_end (0 = last day of the week)
     select
         c.rdhs,
         c.week_start,
@@ -154,7 +148,7 @@ select
     s.rdhs,
     s.district,
     md5(s.district)                                      as district_sk,
-    s.wer_week_key,                                       -- week key (WER, or NDCU ISO week after WER ends)
+    s.wer_week_key,                                       -- NDCU ISO week key after WER ends
     s.case_source,
     s.year,
     s.week,
@@ -178,8 +172,8 @@ select
     w.temp_min_4w_c,
     s.target_cases_h2,
     s.target_cases_h4,
-    s.target_threshold_h2,                                -- known in advance (history only), so the
-    s.target_threshold_h4,                                -- latest week has one too -> used by alerts
+    s.target_threshold_h2,                                -- history-only, so the latest week has one
+    s.target_threshold_h4,                                -- too; used by alerts
     cast(current_timestamp as timestamp)                  as load_ts
 from sequenced s
 left join weather w using (rdhs, week_start)

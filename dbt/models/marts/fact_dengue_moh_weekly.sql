@@ -1,6 +1,6 @@
--- GRAIN: one row per high-risk MOH area per NDCU week.
--- POINT-IN-TIME join to the SCD2 region dimension: each week links to the version of the MOH area that was
--- valid THAT week (valid_from <= week < valid_to), so history stays correct when an area changes later.
+-- Grain: one row per high-risk MOH area per NDCU week.
+-- Point-in-time join to the SCD2 region dimension (valid_from <= week < valid_to), so history
+-- stays correct when an area changes later.
 select
     r.region_sk,
     m.moh_key,

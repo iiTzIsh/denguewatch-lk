@@ -1,4 +1,4 @@
-// Small shared UI pieces, shadcn-style: Radix primitives (accessible, keyboard-ready) + Tailwind.
+// Shared UI pieces: Radix primitives (accessible, keyboard-ready) styled with Tailwind.
 import * as Select from "@radix-ui/react-select";
 import * as ToggleGroup from "@radix-ui/react-toggle-group";
 import type { ReactNode } from "react";

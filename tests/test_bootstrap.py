@@ -1,4 +1,5 @@
 """One-command setup: skip when already set up, stop on required failures, continue on optional ones."""
+
 from __future__ import annotations
 
 import duckdb
@@ -15,10 +16,10 @@ class Result:
 def test_already_set_up(tmp_path, monkeypatch):
     db = tmp_path / "w.duckdb"
     monkeypatch.setattr(bootstrap, "DB_PATH", db)
-    assert bootstrap.already_set_up() is False                          # no file
+    assert bootstrap.already_set_up() is False  # no file
     with duckdb.connect(str(db)) as con:
         con.execute("CREATE SCHEMA ml; CREATE TABLE ml.forecast_weekly (rdhs VARCHAR)")
-    assert bootstrap.already_set_up() is False                          # table but no forecasts
+    assert bootstrap.already_set_up() is False  # table but no forecasts
     with duckdb.connect(str(db)) as con:
         con.execute("INSERT INTO ml.forecast_weekly VALUES ('colombo')")
     assert bootstrap.already_set_up() is True

@@ -1,4 +1,4 @@
--- SCD2 rule: versions of the same MOH area never overlap in time (so a point-in-time join finds at most one)
+-- versions of the same MOH area never overlap, so a point-in-time join finds at most one
 select a.moh_key, a.valid_from, b.valid_from as overlaps_with
 from {{ source('scd2', 'dim_region') }} a
 join {{ source('scd2', 'dim_region') }} b

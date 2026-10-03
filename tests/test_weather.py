@@ -3,6 +3,7 @@ Tests for src/extract/weather.py
 Run: pytest -v           (fast tests only)
      pytest -m network   (the real-API test)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,11 +36,13 @@ def test_build_params_dates_and_vars():
 
 # ---------- retries ----------
 def test_fetch_retries_then_succeeds(no_sleep, sample_payload):
-    session = FakeSession([
-        requests.ConnectionError("network down"),
-        FakeResponse(503),
-        FakeResponse(200, sample_payload),
-    ])
+    session = FakeSession(
+        [
+            requests.ConnectionError("network down"),
+            FakeResponse(503),
+            FakeResponse(200, sample_payload),
+        ]
+    )
     payload = weather.fetch_daily_weather(6.93, 79.86, "2024-05-01", "2024-05-03", session=session)
     assert session.calls == 3
     assert payload["daily"]["time"][0] == "2024-05-01"
@@ -96,16 +99,23 @@ def test_validate_weather_rejects_missing_column(weather_df):
 
 
 def test_validate_weather_rejects_mostly_empty_column(weather_df):
-    weather_df["rainfall_mm"] = None          # what ERA5-Land gave us for rainfall
+    weather_df["rainfall_mm"] = None  # what ERA5-Land gave us for rainfall
     with pytest.raises(weather.WeatherAPIError, match="Too many missing"):
         weather.validate_weather(weather_df)
 
 
 def test_validate_weather_warns_on_few_nulls(caplog):
     dates = pd.date_range("2024-01-01", periods=40).date
-    df = pd.DataFrame({"date": dates, "rainfall_mm": 1.0, "temperature_2m_mean": 28.0,
-                       "temperature_2m_max": 31.0, "temperature_2m_min": 25.0})
-    df.loc[0, "rainfall_mm"] = None           # 1 of 40 = 2.5% -> below the 5% limit
+    df = pd.DataFrame(
+        {
+            "date": dates,
+            "rainfall_mm": 1.0,
+            "temperature_2m_mean": 28.0,
+            "temperature_2m_max": 31.0,
+            "temperature_2m_min": 25.0,
+        }
+    )
+    df.loc[0, "rainfall_mm"] = None  # 1 of 40 = 2.5% -> below the 5% limit
     weather.validate_weather(df)
     assert "1 missing values" in caplog.text  # caplog captures log output
 
@@ -144,6 +154,6 @@ def test_real_api_colombo_one_week():
     assert len(df) == 7
 
 
-# ---------- Week 3: --as-of window ----------
+# ---------- --as-of window ----------
 def test_window_from_as_of():
     assert weather.window_from_as_of("2026-09-28", 35) == ("2026-08-19", "2026-09-22")  # 6-day ERA5-Land lag

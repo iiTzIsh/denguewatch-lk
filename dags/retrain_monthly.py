@@ -1,11 +1,9 @@
-"""
-DAG: retrain_monthly
-1st of every month 09:00: backtest + train a new forecaster, register it in MLflow, and promote it
-to @champion ONLY if it beats the naive baseline and is not worse than the current champion
-(rules in src/ml/train.py). A rejected model is not a failure: it stays registered, tagged with the reason.
+"""Monthly retrain DAG (1st, 09:00): backtest, train, register in MLflow, champion/challenger promotion.
 
-Needs the MLflow server:  docker compose up -d mlflow
+Promotion rules live in src/ml/train.py; a rejected model stays registered with the reason tagged.
+Requires the MLflow server (docker compose up -d mlflow).
 """
+
 from __future__ import annotations
 
 from datetime import timedelta
@@ -15,7 +13,7 @@ from airflow.providers.standard.operators.bash import BashOperator
 from airflow.sdk import DAG
 
 PROJECT = "/opt/airflow/project"
-ML_PY = "/opt/airflow/ml_venv/bin/python"     # ML libraries live in their own virtualenv (see infra/airflow/Dockerfile)
+ML_PY = "/opt/airflow/ml_venv/bin/python"  # separate venv, see infra/airflow/Dockerfile
 
 with DAG(
     dag_id="retrain_monthly",

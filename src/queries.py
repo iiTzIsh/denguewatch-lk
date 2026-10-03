@@ -1,4 +1,5 @@
-"""Read-only queries behind the dashboard (kept separate from the UI so they can be unit-tested)."""
+"""Read-only queries on the gold layer, shared by the API and the Telegram alert."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -103,7 +104,7 @@ def latest_forecast(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     """Newest batch of forecasts, one row per region, riskiest first. Empty if none scored yet."""
     try:
         return con.execute(FORECAST_SQL).df()
-    except duckdb.CatalogException:        # ml.forecast_latest not created yet (python -m src.ml.predict)
+    except duckdb.CatalogException:  # ml.forecast_latest not created yet (python -m src.ml.predict)
         return pd.DataFrame()
 
 
@@ -135,8 +136,9 @@ def model_performance(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
 
 
 def forecast_vs_actual(con: duckdb.DuckDBPyConnection, horizon: int = 4) -> pd.DataFrame:
-    """National totals per target week: actual, model forecast, naive. One forecast per region and
-    target week (the live champion if it exists, otherwise the as-of replay)."""
+    """National actual, forecast and naive totals per target week.
+
+    Uses one forecast per region and target week: the live model if present, else the as-of replay."""
     try:
         return con.execute(
             """

@@ -1,14 +1,29 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+
+# Local data and logs
 data/
 *.duckdb
 logs/
 .env
+
+# MLflow
 mlflow/
 mlruns/
 mlartifacts/
+
+# Reference source documents
 reference/population/*.pdf
+
+# Web dashboard
 web/node_modules/
 web/dist/
+
+# Airflow
+infra/airflow/config/airflow.cfg

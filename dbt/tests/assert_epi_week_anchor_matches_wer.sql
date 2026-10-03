@@ -1,4 +1,4 @@
--- dates seen on the WER listing page (add more as you verify them)
+-- epi week start dates verified against the WER listing page
 select * from (values ('2024-W01', date '2023-12-30'), ('2024-W18', date '2024-04-27'), ('2023-W52', date '2023-12-23'))
     as expected(epi_week_key, week_start)
 where not exists (

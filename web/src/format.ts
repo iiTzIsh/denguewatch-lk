@@ -19,7 +19,7 @@ export const addDays = (iso: string, n: number) => {
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 };
-/** "7–13 September 2026" */
+/** e.g. "7-13 September 2026" (rendered with an en dash) */
 export const weekRange = (startIso: string) => {
   const endIso = addDays(startIso, 6);
   const sameMonth = startIso.slice(5, 7) === endIso.slice(5, 7);

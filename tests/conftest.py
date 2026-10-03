@@ -1,7 +1,5 @@
-"""
-Shared test fixtures. pytest loads this file automatically -
-any test can ask for a fixture just by using its name as an argument.
-"""
+"""Shared pytest fixtures."""
+
 from __future__ import annotations
 
 import copy
@@ -56,13 +54,12 @@ class FakeSession:
 
 @pytest.fixture
 def sample_payload() -> dict:
-    """A fresh deep copy each test, so one test can't break another by editing it."""
+    """Fresh deep copy per test so in-place edits don't leak between tests."""
     return copy.deepcopy(_SAMPLE_PAYLOAD)
 
 
 @pytest.fixture
 def weather_df(sample_payload) -> pd.DataFrame:
-    """Fixtures can use other fixtures."""
     return weather.to_dataframe(sample_payload)
 
 

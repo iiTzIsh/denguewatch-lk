@@ -1,4 +1,5 @@
-"""NDCU: link discovery + parser tested against a REAL weekly update PDF (week 37, 2026)."""
+"""NDCU: link discovery + parser tested against a real weekly update PDF (week 37, 2026)."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -37,16 +38,16 @@ def test_week_and_dates(week37):
 
 def test_all_26_regions_and_total(week37):
     assert len(week37) == 26
-    assert week37["cases_this_week"].sum() == 1156          # printed Total row
+    assert week37["cases_this_week"].sum() == 1156  # printed Total row
 
 
 def test_known_values(week37):
     r = week37.set_index("rdhs")
     assert r.loc["colombo", ["cases_prev_week", "cases_this_week", "cum_this_year"]].tolist() == [222, 207, 23161]
-    assert r.loc["kilinochchi", "cases_prev_year_this_week"] == 0        # 'Nil' -> 0
-    assert r.loc["kalutara", "cases_prev_week"] == 71                    # '71*' -> 71
+    assert r.loc["kilinochchi", "cases_prev_year_this_week"] == 0  # 'Nil' -> 0
+    assert r.loc["kalutara", "cases_prev_week"] == 71  # '71*' -> 71
     assert bool(r.loc["kalutara", "has_revised_value"]) is True
-    assert r.loc["galle", "cases_this_week"] == 69                       # row the table layer split in 3
+    assert r.loc["galle", "cases_this_week"] == 69  # row the table layer split in 3
     assert r.loc["kalmunai", "cases_this_week"] == 31
 
 
@@ -56,19 +57,19 @@ def test_total_mismatch_is_rejected():
         parse_text(text)
 
 
-# ---- real PDFs that were quarantined on the first run ----
+# --- real PDFs with layout edge cases ---
 FIX = Path(__file__).parent / "fixtures"
 
 
 def test_week27_ni_glitch_parses():
-    df = parse_pdf(FIX / "Weekly-Dengue-Update-2026-Week-27.pdf")    # text layer has 'Nil Ni'
+    df = parse_pdf(FIX / "Weekly-Dengue-Update-2026-Week-27.pdf")  # text layer has 'Nil Ni'
     r = df.set_index("rdhs")
     assert r.loc["vavuniya", "cases_prev_year_this_week"] == 0
     assert df["cases_this_week"].sum() == 7916 and (df["total_check"] == "full").all()
 
 
 def test_week23_total_row_with_5_numbers():
-    df = parse_pdf(FIX / "weekly-dengue-update-2026-week-23.pdf")    # PDF left out last week's total
+    df = parse_pdf(FIX / "weekly-dengue-update-2026-week-23.pdf")  # PDF left out last week's total
     assert df["cases_this_week"].sum() == 3265 and df["cum_this_year"].sum() == 37118
     assert (df["total_check"] == "partial").all()
 
@@ -80,6 +81,7 @@ def test_missing_region_is_rejected():
 
 def _text() -> str:
     import pdfplumber
+
     with pdfplumber.open(FIXTURE) as pdf:
         return pdf.pages[0].extract_text() or ""
 
@@ -97,8 +99,10 @@ def test_crawl_follows_archive_pages():
     site = {
         f"{BASE_URL}/": pdf(37),
         f"{BASE_URL}/weekly-report/": pdf(21) + pdf(19) + f'<a href="{BASE_URL}/weekly-report/page/2/">2</a>',
-        f"{BASE_URL}/weekly-report/page/2/": pdf(15) + pdf(18, "2026/08") + pdf(20, "2026/08")
-        + '<a href="/weekly-report/">1</a><a href="/weekly-report/page/2">2</a>',   # links back: no loop
+        f"{BASE_URL}/weekly-report/page/2/": pdf(15)
+        + pdf(18, "2026/08")
+        + pdf(20, "2026/08")
+        + '<a href="/weekly-report/">1</a><a href="/weekly-report/page/2">2</a>',  # links back: no loop
     }
     visited: list[str] = []
 
@@ -109,13 +113,13 @@ def test_crawl_follows_archive_pages():
     links = crawl_listing(fetch)
     weeks = sorted(int(u.rsplit("-", 1)[-1].removesuffix(".pdf")) for u in links)
     assert weeks == [15, 18, 19, 20, 21, 37]
-    assert len(visited) == len(set(visited)) == 3      # each page once
+    assert len(visited) == len(set(visited)) == 3  # each page once
 
 
 def test_crawl_has_a_page_cap():
     from src.extract.ndcu import BASE_URL, crawl_listing
 
-    def endless(url: str) -> str:   # every page links to a next page
+    def endless(url: str) -> str:  # every page links to a next page
         n = int(url.rstrip("/").rsplit("/", 1)[-1]) if "/page/" in url else 1
         return f'<a href="{BASE_URL}/weekly-report/page/{n + 1}/">next</a>'
 

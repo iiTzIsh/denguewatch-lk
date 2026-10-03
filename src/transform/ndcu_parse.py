@@ -1,16 +1,10 @@
-"""
-Parse NDCU weekly update PDFs (bronze) -> one clean CSV per week (data/parsed/ndcu_weekly/).
+"""Parse NDCU weekly PDFs (Table 1, cases per RDHS region) into one CSV per week.
 
-Table 1 of each PDF = cases per RDHS region (25 districts, Ampara split into Ampara + Kalmunai = 26 rows).
-We read the PDF TEXT layer (the table layer splits some rows), then VALIDATE:
-  - all 26 regions found
-  - our sums == the 'Total' row printed in the PDF, for the columns we USE (this week + cumulative this year).
-    (The 'last year' columns don't add up even in the source PDFs, and some Total rows miss a number.)
-  - week dates in the header match the ISO week (NDCU weeks run Monday -> Sunday!)
-Anything that fails is moved to data/quarantine/ndcu/ - never loaded.
-
-Run:  python -m src.transform.ndcu_parse
+Reads the text layer (the table layer splits some rows), checks regions, Total row and ISO week
+dates; failures are quarantined in data/quarantine/ndcu/.
+Run: python -m src.transform.ndcu_parse
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,19 +25,22 @@ OUT_DIR = PARSED_DIR / "ndcu_weekly"
 BAD_DIR = QUARANTINE_DIR / "ndcu"
 RDHS = pd.read_csv(REFERENCE_DIR / "rdhs.csv")
 
-# a cell: number, number with * (revised), 'Nil' (or 'Ni': text-layer glitch)
+# cell: number, number with '*' (revised) or 'Nil' ('Ni' is a text-layer glitch)
 VAL = r"(\d+\*?|Nil|Ni)"
 ROW_RE = {
     str(code): re.compile(rf"\b{re.escape(str(name))}\*?\s+" + r"\s+".join([VAL] * 6) + r"(?:\s|$)")
     for code, name in zip(RDHS["rdhs"], RDHS["rdhs_name"], strict=True)
 }
-TOTAL_RE = re.compile(r"\bTotal\*?\s+((?:(?:\d+\*?|Nil)\s*){5,6})")   # 6 numbers, sometimes only 5
+TOTAL_RE = re.compile(r"\bTotal\*?\s+((?:(?:\d+\*?|Nil)\s*){5,6})")  # some PDFs print only 5 of the 6 totals
 YEAR_WEEK_RE = re.compile(r"Year:\s*(\d{4}).*?Issue:\s*(\d{1,2})", re.DOTALL)
 HEADER_RE = re.compile(r"Week\s+(\d{1,2})\s*\((.+?)\)")
 COLUMNS = [
-    "cases_prev_year_prev_week", "cases_prev_year_this_week",
-    "cases_prev_week", "cases_this_week",
-    "cum_prev_year", "cum_this_year",
+    "cases_prev_year_prev_week",
+    "cases_prev_year_this_week",
+    "cases_prev_week",
+    "cases_this_week",
+    "cum_prev_year",
+    "cum_this_year",
 ]
 
 
@@ -56,20 +53,20 @@ def to_int(cell: str) -> int:
 
 
 def parse_text(text: str) -> pd.DataFrame:
-    """Page-1 text -> DataFrame (26 rows). Raises NDCUParseError if anything doesn't add up."""
+    """Page-1 text -> DataFrame (26 rows); raises NDCUParseError if validation fails."""
     m = YEAR_WEEK_RE.search(text)
     if not m:
         raise NDCUParseError("Year/Issue not found")
     year, week = int(m.group(1)), int(m.group(2))
-    week_start = date.fromisocalendar(year, week, 1)          # Monday
-    week_end = week_start + timedelta(days=6)                  # Sunday
+    week_start = date.fromisocalendar(year, week, 1)  # NDCU weeks run Monday-Sunday
+    week_end = week_start + timedelta(days=6)
 
     header = HEADER_RE.search(text)
     if not header or int(header.group(1)) != week:
         raise NDCUParseError("Header week missing or different from Issue number")
     days = re.findall(r"\b(\d{1,2})(?!\d)", re.sub(r"\d{4}", "", header.group(2)))  # drop years, keep day numbers
     end_day = days
-    if not end_day or int(end_day[-1]) != week_end.day:        # e.g. '07th – 13th September 2026' -> 13
+    if not end_day or int(end_day[-1]) != week_end.day:  # '07th - 13th September 2026' -> 13
         raise NDCUParseError(f"Header dates '{header.group(2)}' don't match ISO week {year}-W{week:02d}")
 
     rows = []
@@ -78,8 +75,13 @@ def parse_text(text: str) -> pd.DataFrame:
         if not found:
             raise NDCUParseError(f"Region not found: {rdhs}")
         cells = found.groups()
-        rows.append({"rdhs": rdhs, **{c: to_int(v) for c, v in zip(COLUMNS, cells, strict=True)},
-                     "has_revised_value": any(v.endswith("*") for v in cells)})
+        rows.append(
+            {
+                "rdhs": rdhs,
+                **{c: to_int(v) for c, v in zip(COLUMNS, cells, strict=True)},
+                "has_revised_value": any(v.endswith("*") for v in cells),
+            }
+        )
     df = pd.DataFrame(rows)
 
     total = TOTAL_RE.search(text)
@@ -89,7 +91,8 @@ def parse_text(text: str) -> pd.DataFrame:
     this_week, cum = int(df["cases_this_week"].sum()), int(df["cum_this_year"].sum())
     if len(printed) == 6:
         ok, check = printed[3] == this_week and printed[5] == cum, "full"
-    else:  # one number missing from the printed Total row -> this week must still appear, cumulative is last
+    else:  # one total missing: this week must still appear and cumulative is last
+        # only this-week and cumulative are checked; the last-year columns don't add up in the source
         ok, check = this_week in printed and printed[-1] == cum, "partial"
     if not ok:
         raise NDCUParseError(f"Sums (this week {this_week}, cumulative {cum}) don't match printed Total {printed}")
@@ -122,7 +125,7 @@ def main() -> None:
             continue
         try:
             df = parse_pdf(pdf)
-        except (NDCUParseError, Exception) as exc:  # noqa: BLE001 - any failure -> quarantine
+        except (NDCUParseError, Exception) as exc:  # noqa: BLE001 - any failure is quarantined
             BAD_DIR.mkdir(parents=True, exist_ok=True)
             shutil.copy2(pdf, BAD_DIR / pdf.name)
             (BAD_DIR / f"{pdf.stem}.error.txt").write_text(str(exc), encoding="utf-8")
@@ -130,10 +133,16 @@ def main() -> None:
             bad += 1
             continue
         df.to_csv(out, index=False)
-        for stale in BAD_DIR.glob(f"{pdf.stem}.*"):   # parsed OK now -> clear an old quarantine entry
+        for stale in BAD_DIR.glob(f"{pdf.stem}.*"):  # clear an old quarantine entry
             stale.unlink()
-        logger.info("Parsed %s -> %d-W%02d, %d regions, total %d",
-                    pdf.name, df["year"][0], df["iso_week"][0], len(df), df["cases_this_week"].sum())
+        logger.info(
+            "Parsed %s -> %d-W%02d, %d regions, total %d",
+            pdf.name,
+            df["year"][0],
+            df["iso_week"][0],
+            len(df),
+            df["cases_this_week"].sum(),
+        )
         ok += 1
     logger.info("NDCU parse done: %d parsed, %d skipped (already parsed), %d quarantined", ok, skipped, bad)
     if bad:

@@ -1,6 +1,6 @@
-# ADR 0002 — WER history from the `denguedatahub` R package (pinned)
+# ADR 0002: WER history from the `denguedatahub` R package (pinned)
 
-**Date:** 30 Sep 2026 · **Status:** accepted
+Date: 30 Sep 2026. Status: accepted.
 
 ## Context
 - The forecasting model needs **years** of weekly dengue history per region (incl. the 2017 epidemic).
@@ -26,7 +26,7 @@ Our own WER scraper stays in the project; when the site returns, it can **re-ver
 | Gaps | 2023-W52 missing; 2026-W07 has 25 of 26 regions |
 
 ## Consequences
-- Phase 4 (ML) is unblocked.
+- The forecasting model has a 2007-2026 training history, including the 2017 epidemic.
 - Weekly weather for WER weeks is computed over each week's **actual** start/end dates, so the week-definition
   change in 2026 is handled exactly.
 - Credit denguedatahub + the Epidemiology Unit in the README and dashboard.

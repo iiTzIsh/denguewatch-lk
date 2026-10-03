@@ -1,5 +1,4 @@
-# ---- DengueWatch LK web dashboard ----
-# Stage 1 builds the React app with Node; stage 2 serves the static files with nginx (small image, no Node).
+# DengueWatch LK web dashboard: build with Node, then serve the static files with nginx.
 FROM node:22-alpine AS build
 WORKDIR /web
 COPY package.json package-lock.json ./

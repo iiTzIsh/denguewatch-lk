@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
-/* Body text is Atkinson Hyperlegible; only its digits are swapped for Bricolage's
-   (Atkinson's slashed zero makes dates like 2026 read oddly). unicode-range = digits only. */
+/* Bricolage digits only (unicode-range), layered over Atkinson Hyperlegible body text:
+   Atkinson's slashed zero makes dates like 2026 read oddly. */
 @font-face {
   font-family: "DW Figures";
   src: url("./assets/fonts/bricolage-grotesque-latin-wght-normal.woff2") format("woff2-variations");
@@ -10,13 +10,13 @@
   unicode-range: U+0030-0039;
 }
 
-/* ---------- design tokens: one place for light + dark ---------- */
+/* Design tokens (light; dark overrides below) */
 :root {
   color-scheme: light;
-  --bg: #eef3f2;          /* mist */
+  --bg: #eef3f2;
   --surface: #ffffff;
   --surface-2: #f6f9f8;
-  --ink: #0f2a2e;         /* deep lagoon ink */
+  --ink: #0f2a2e;
   --ink-2: #48605f;
   --ink-3: #6f8486;
   --line: #d5e0de;
@@ -110,7 +110,7 @@ body {
   font-size: 16px;
   line-height: 1.5;
 }
-/* numbers: Bricolage's figures (Atkinson's slashed zero reads oddly in tables), tabular so columns line up */
+/* tabular figures so columns line up */
 .num {
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
@@ -128,7 +128,7 @@ h1, h2, h3 {
   background: color-mix(in oklab, var(--lagoon) 25%, transparent);
 }
 
-/* map: transparent canvas, our own tooltip */
+/* MapLibre: no canvas outline; data credits are in the footer */
 .maplibregl-canvas { outline: none; }
 .maplibregl-ctrl-attrib { display: none; }
 

@@ -2,39 +2,39 @@ version: 2
 
 sources:
   - name: silver
-    description: Tables loaded by the Python pipeline (src/load/duckdb_load.py)
+    description: Tables loaded by src/load/duckdb_load.py.
     schema: main
     tables:
       - name: weather_daily
-        description: One row per district per day (newest pull wins), Open-Meteo era5_seamless
+        description: One row per district per day (newest pull wins); Open-Meteo era5_seamless.
       - name: weather_weekly
-        description: One row per district per Sat->Fri epi week
+        description: One row per district per Sat-Fri epi week.
       - name: dim_district
-        description: 25 districts with centroids, from reference/districts.csv (geoBoundaries/OSM)
+        description: 25 districts with centroids, from reference/districts.csv (geoBoundaries/OSM).
       - name: dim_rdhs
-        description: 26 RDHS regions (25 districts, Ampara split into Ampara + Kalmunai) -> district
+        description: 26 RDHS regions mapped to 25 districts (Ampara district = Ampara + Kalmunai RDHS).
       - name: ndcu_weekly_cases
-        description: Parsed NDCU weekly update PDFs. ISO weeks (Monday -> Sunday), one row per RDHS per week.
+        description: Parsed NDCU weekly update PDFs; one row per RDHS per ISO week (Mon-Sun).
       - name: district_population
-        description: Census 2024 population per district (reference/population/, read from the official report)
+        description: Census 2024 population per district (reference/population/).
       - name: ndcu_moh_weekly_cases
         description: >
-          NDCU weekly update page 2 "High risk MOH areas" (src.transform.ndcu_moh_parse). Only HIGH-RISK MOH areas
-          are listed each week - an area missing in a week was not high-risk, not zero cases.
+          NDCU weekly update page 2 "High risk MOH areas" (src.transform.ndcu_moh_parse). Only high-risk
+          areas are listed; an area missing from a week was not high-risk, not zero cases.
       - name: wer_weekly_cases
         description: >
-          WER dengue history 2007->2026 per RDHS, from the denguedatahub R package (pinned commit), itself extracted
-          from the Epidemiology Unit's Weekly Epidemiological Reports. Sat->Fri epi weeks up to 2025; Mon->Sun in 2026.
+          WER dengue history 2007-2026 per RDHS from the denguedatahub R package (pinned commit), extracted from
+          the Epidemiology Unit's Weekly Epidemiological Reports. Sat-Fri epi weeks up to 2025; Mon-Sun in 2026.
 
   - name: ml
-    description: Written by the ML jobs (created empty by the silver load, so dbt always finds it)
+    description: Written by the ML jobs; created empty by the silver load so it always exists.
     schema: ml
     tables:
       - name: forecast_weekly
-        description: Every batch of forecasts (src.ml.predict = live @champion, src.ml.replay = as-of replay)
+        description: All forecast batches (src.ml.predict for live @champion, src.ml.replay for as-of replay).
 
   - name: scd2
-    description: SCD Type 2 table maintained incrementally by src/transform/scd2.py
+    description: SCD Type 2 table maintained incrementally by src/transform/scd2.py.
     schema: gold
     tables:
       - name: dim_region

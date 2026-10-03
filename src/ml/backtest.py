@@ -1,21 +1,10 @@
-"""
-Walk-forward backtest + MLflow tracking.
+"""Yearly walk-forward backtest of each model and horizon, logged as one MLflow run each.
 
-For each test year Y (default 2014 -> 2025):
-    train on weeks whose TARGET is already known before Y starts   (no peeking into Y)
-    predict every week of Y
-Then score all years together, per year, and the 2017 epidemic on its own.
-
-Every model x horizon becomes one MLflow run: params, metrics, per-year MAE chart, and the
-predictions file as an artifact, so any number in the README can be traced back to a run.
-
-Run:  docker compose up -d mlflow           (once; UI at http://localhost:5000)
-      python -m src.ml.backtest             (baselines + LightGBM, h = 2 and 4)
+skill_vs_naive = 1 - MAE(model) / MAE(last value); > 0 means the model beats persistence.
+Run:  python -m src.ml.backtest
       python -m src.ml.backtest --models lgbm_growth --horizons 4
-
-Every run also logs "skill_vs_naive" = 1 - MAE(model) / MAE(last value) on the same rows:
-> 0 means the model beats "same as this week"; that is the bar for deploying anything.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,11 +24,11 @@ from src.ml.risk import is_alert
 
 logger = logging.getLogger(__name__)
 
-TEST_YEARS = list(range(2014, 2026))   # 2014: enough history before it; 2017 = the big epidemic
+TEST_YEARS = list(range(2014, 2026))  # 2014 leaves enough history; 2017 is the epidemic year
 
 
 def walk_forward(df: pd.DataFrame, model: Forecaster, horizon: int, test_years: list[int]) -> pd.DataFrame:
-    """Return one row per (region, week) in the test years with y_true / y_pred / threshold."""
+    """One row per region-week in the test years with y_true, y_pred and threshold."""
     target, thr = TARGETS[horizon], THRESHOLDS[horizon]
     labelled = df[df[target].notna()]
     out = []
@@ -48,17 +37,21 @@ def walk_forward(df: pd.DataFrame, model: Forecaster, horizon: int, test_years: 
         if test.empty:
             continue
         cutoff = test["week_start"].min()
-        # purge: a training row is usable only if its target week ended before the test year starts
+        # purge rows whose target week ends inside the test year
         train = labelled[labelled["week_end"] + pd.Timedelta(days=7 * horizon) < cutoff]
         model.fit(train, horizon)
-        out.append(pd.DataFrame({
-            "rdhs": test["rdhs"].to_numpy(),
-            "year": year,
-            "week_start": test["week_start"].to_numpy(),
-            "y_true": test[target].to_numpy(dtype=float),
-            "y_pred": np.clip(model.predict(test), 0, None),
-            "threshold": test[thr].to_numpy(dtype=float),
-        }))
+        out.append(
+            pd.DataFrame(
+                {
+                    "rdhs": test["rdhs"].to_numpy(),
+                    "year": year,
+                    "week_start": test["week_start"].to_numpy(),
+                    "y_true": test[target].to_numpy(dtype=float),
+                    "y_pred": np.clip(model.predict(test), 0, None),
+                    "threshold": test[thr].to_numpy(dtype=float),
+                }
+            )
+        )
     return pd.concat(out, ignore_index=True)
 
 
@@ -69,7 +62,7 @@ def score(pred: pd.DataFrame) -> dict[str, float]:
         "rmse": float(np.sqrt((err**2).mean())),
         "n_rows": float(len(pred)),
     }
-    # outbreak = cases above the endemic threshold of that week (see src/ml/risk.py)
+    # outbreak = cases above that week's endemic threshold (src/ml/risk.py)
     lab = pred[pred["threshold"].notna()]
     actual = lab["y_true"] > lab["threshold"]
     called = lab["y_pred"] > lab["threshold"]
@@ -77,7 +70,7 @@ def score(pred: pd.DataFrame) -> dict[str, float]:
     m["outbreak_weeks"] = float(actual.sum())
     m["outbreak_recall"] = tp / actual.sum() if actual.sum() else float("nan")
     m["outbreak_precision"] = tp / called.sum() if called.sum() else float("nan")
-    # what the ALERT uses: forecast >= ALERT_RATIO x outbreak level ("watch" or "high")
+    # alert = "watch" or "high", i.e. forecast >= ALERT_RATIO x outbreak level
     alert = is_alert(lab["y_pred"], lab["threshold"])
     tp_a = float((actual & alert).sum())
     m["alert_recall"] = tp_a / actual.sum() if actual.sum() else float("nan")
@@ -92,7 +85,8 @@ def by_year(pred: pd.DataFrame) -> pd.DataFrame:
 def skill_vs_naive(pred: pd.DataFrame, df: pd.DataFrame, horizon: int, test_years: list[int]) -> float:
     naive = walk_forward(df, LastValue(), horizon, test_years)
     return 1 - float((pred["y_pred"] - pred["y_true"]).abs().mean()) / float(
-        (naive["y_pred"] - naive["y_true"]).abs().mean())
+        (naive["y_pred"] - naive["y_true"]).abs().mean()
+    )
 
 
 def log_run(pred: pd.DataFrame, model: Forecaster, horizon: int, df: pd.DataFrame, test_years: list[int]) -> dict:
@@ -100,27 +94,40 @@ def log_run(pred: pd.DataFrame, model: Forecaster, horizon: int, df: pd.DataFram
     overall["skill_vs_naive"] = skill_vs_naive(pred, df, horizon, test_years)
     yearly = by_year(pred)
     with mlflow.start_run(run_name=f"{model.name}_h{horizon}"):
-        mlflow.set_tags({"model_family": "baseline" if model.name in BASELINES else "ml",
-                         "horizon_weeks": horizon, "validation": "walk_forward_yearly"})
-        mlflow.log_params({
-            "model": model.name, "horizon": horizon,
-            "test_years": f"{test_years[0]}-{test_years[-1]}",
-            "data_rows": len(df), "data_last_week": str(df["week_start"].max().date()),
-        })
+        mlflow.set_tags(
+            {
+                "model_family": "baseline" if model.name in BASELINES else "ml",
+                "horizon_weeks": horizon,
+                "validation": "walk_forward_yearly",
+            }
+        )
+        mlflow.log_params(
+            {
+                "model": model.name,
+                "horizon": horizon,
+                "test_years": f"{test_years[0]}-{test_years[-1]}",
+                "data_rows": len(df),
+                "data_last_week": str(df["week_start"].max().date()),
+            }
+        )
         if isinstance(model, LightGBMGrowth):
             mlflow.log_params({f"lgbm_{k}": v for k, v in model.params.items()})
             mlflow.log_param("use_weather", model.use_weather)
         mlflow.log_metrics(overall)
         y2017 = yearly.loc[yearly["year"] == 2017]
         if not y2017.empty:
-            mlflow.log_metrics({"mae_2017": float(y2017["mae"].iloc[0]),
-                                "outbreak_recall_2017": float(y2017["outbreak_recall"].iloc[0])})
-        for _, r in yearly.iterrows():                     # "mae_by_year" chart in the MLflow UI
+            mlflow.log_metrics(
+                {
+                    "mae_2017": float(y2017["mae"].iloc[0]),
+                    "outbreak_recall_2017": float(y2017["outbreak_recall"].iloc[0]),
+                }
+            )
+        for _, r in yearly.iterrows():
             mlflow.log_metric("mae_by_year", float(r["mae"]), step=int(r["year"]))
         with tempfile.TemporaryDirectory() as tmp:
             pred.to_csv(Path(tmp) / "backtest_predictions.csv", index=False)
             yearly.to_csv(Path(tmp) / "backtest_by_year.csv", index=False)
-            if isinstance(model, LightGBMGrowth):     # from the last fold (trained on the most data)
+            if isinstance(model, LightGBMGrowth):  # last fold, trained on the most data
                 model.feature_importance().to_csv(Path(tmp) / "feature_importance_last_fold.csv", index=False)
             mlflow.log_artifacts(tmp, artifact_path="backtest")
     return overall
@@ -145,8 +152,14 @@ def main() -> None:
             pred = walk_forward(df, model, h, TEST_YEARS)
             m = log_run(pred, model, h, df, TEST_YEARS)
             rows.append({"model": name, "h": h, **{k: round(v, 3) for k, v in m.items()}})
-            logger.info("%s h=%d  MAE=%.2f  skill vs naive=%+.1f%%  outbreak recall=%.2f",
-                        name, h, m["mae"], 100 * m["skill_vs_naive"], m["outbreak_recall"])
+            logger.info(
+                "%s h=%d  MAE=%.2f  skill vs naive=%+.1f%%  outbreak recall=%.2f",
+                name,
+                h,
+                m["mae"],
+                100 * m["skill_vs_naive"],
+                m["outbreak_recall"],
+            )
     print(pd.DataFrame(rows).to_string(index=False))
     print(f"\nOpen {MLFLOW_TRACKING_URI} -> experiment '{MLFLOW_EXPERIMENT}' to compare runs.")
 

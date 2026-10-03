@@ -1,21 +1,11 @@
+"""Set up a fresh clone end to end: extract, build gold tables, train, forecast and monitor.
+
+Runs as the `init` service of `docker compose up -d`. Every step is idempotent; NDCU and weather
+steps may fail without stopping setup. Exit code 0 = ready, 1 = a required step failed.
+
+Run:  python -m src.bootstrap [--force]     (--force reruns all steps even if already set up)
 """
-ONE-COMMAND SETUP: fresh clone -> working system (data, gold tables, trained model, forecasts, monitoring).
 
-Runs automatically as the `init` service of `docker compose up -d`, or by hand:
-    python -m src.bootstrap              (skips everything if the system is already set up)
-    python -m src.bootstrap --force      (run all steps again)
-
-Steps (each one is idempotent - safe to repeat):
-  1. WER history 2006->2026 (pinned denguedatahub commit)             required
-  2. NDCU weekly PDFs                                                  site down -> continue with what we have
-  3. Weather 2006->now (Open-Meteo, resumable)                         daily limit -> continue, finish tomorrow
-  4. Pipeline: parse -> silver -> SCD2 -> dbt build (all data tests)   required
-  5. Train + register the model in MLflow (@champion)                  required
-  6. Forecasts, as-of replay, accuracy table, drift check              required
-  7. Print the Telegram message (dry run - never sends from here)
-
-Exit codes: 0 = ready (maybe with warnings) · 1 = a required step failed
-"""
 from __future__ import annotations
 
 import argparse
@@ -34,11 +24,11 @@ logger = logging.getLogger(__name__)
 
 DBT_BIN = os.getenv("DW_DBT_BIN", "dbt")
 DBT_ARGS = ["--project-dir", str(PROJECT_ROOT / "dbt"), "--profiles-dir", str(PROJECT_ROOT / "dbt")]
-RATE_LIMITED, UNREACHABLE = 3, 4       # exit codes of src.extract.weather_backfill
+RATE_LIMITED, UNREACHABLE = 3, 4  # exit codes of src.extract.weather_backfill
 
 
 class StepFailed(Exception):
-    pass
+    """A required setup step exited with an error."""
 
 
 def py(module: str, *args: str) -> list[str]:
@@ -75,11 +65,17 @@ def run() -> None:
     step("1/7 WER dengue history (2006 -> 2026)", py("src.extract.wer_history"))
     step("2/7 NDCU weekly PDFs", py("src.extract.ndcu"), required=False)
 
-    code = step("3/7 Weather 2006 -> now (Open-Meteo, resumable)", py("src.extract.weather_backfill"),
-                required=False, ok_codes=(0,))
+    code = step(
+        "3/7 Weather 2006 -> now (Open-Meteo, resumable)",
+        py("src.extract.weather_backfill"),
+        required=False,
+        ok_codes=(0,),
+    )
     if code == RATE_LIMITED:
-        logger.warning("    Open-Meteo daily limit reached. Older years will be filled in by re-running "
-                       "`docker compose run --rm init --force` tomorrow (it continues where it stopped).")
+        logger.warning(
+            "    Open-Meteo daily limit reached. Older years will be filled in by re-running "
+            "`docker compose run --rm init --force` tomorrow (it continues where it stopped)."
+        )
     elif code == UNREACHABLE:
         logger.warning("    Open-Meteo unreachable - continuing with the weather files already on disk.")
     if not list(WEATHER_BRONZE_DIR.glob("*.csv")):
@@ -89,7 +85,7 @@ def run() -> None:
     step("4/7 Pipeline: parse -> silver -> SCD2 -> dbt build + data tests", py("src.pipeline"))
     step("5/7 Train model -> MLflow registry (@champion if it beats the baseline)", py("src.ml.train"))
     step("6/7 Forecasts + as-of replay + accuracy table + drift check", py("src.ml.predict"))
-    step("    as-of replay (honest forecast history)", py("src.ml.replay"))
+    step("    as-of replay (forecast history)", py("src.ml.replay"))
     step("    forecast vs actual table", [DBT_BIN, "build", "--select", "mart_forecast_accuracy", *DBT_ARGS])
     step("    drift check (Evidently)", py("src.ml.monitor"))
     step("7/7 Telegram message preview (not sent)", py("src.alerts.telegram", "--dry-run"), required=False)

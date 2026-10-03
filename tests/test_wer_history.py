@@ -1,4 +1,5 @@
 """WER history (denguedatahub) -> tidy + validated. Uses a tiny hand-made frame, no download."""
+
 from __future__ import annotations
 
 import pandas as pd
@@ -12,11 +13,15 @@ def raw(rows):
 
 
 def test_names_are_mapped_incl_aliases():
-    df = wh.tidy(raw([
-        (2025.0, 1.0, "12/28/2024", "1/3/2025", "Colombo", 10.0),
-        (2025.0, 1.0, "12/28/2024", "1/3/2025", "Kalmune", 2.0),        # source spelling
-        (2025.0, 1.0, "12/28/2024", "1/3/2025", "NuwaraEliya", 0.0),
-    ]))
+    df = wh.tidy(
+        raw(
+            [
+                (2025.0, 1.0, "12/28/2024", "1/3/2025", "Colombo", 10.0),
+                (2025.0, 1.0, "12/28/2024", "1/3/2025", "Kalmune", 2.0),  # source spelling
+                (2025.0, 1.0, "12/28/2024", "1/3/2025", "NuwaraEliya", 0.0),
+            ]
+        )
+    )
     assert df["rdhs"].tolist() == ["colombo", "kalmunai", "nuwara_eliya"]
     assert df["cases"].dtype == "int64" and (df["week_days"] == 7).all()
     assert (df["week_start_day"] == "Saturday").all()

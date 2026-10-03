@@ -1,6 +1,6 @@
--- GRAIN: one forecast (region x base week x horizon x model version) whose target week has happened.
--- Forecast vs actual, next to the naive "same as this week" forecast, so model health = "still beating naive?"
--- Forecasts come from src.ml.predict (live @champion) and src.ml.replay (as-of replay, no hindsight).
+-- Grain: one forecast (region x base week x horizon x model version) whose target week has passed.
+-- Forecast vs actual alongside the naive "same as this week" forecast.
+-- Sources: src.ml.predict (live @champion) and src.ml.replay (as-of replay, no hindsight).
 with forecasts as (
     select * from {{ source('ml', 'forecast_weekly') }}
 ),

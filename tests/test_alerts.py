@@ -1,4 +1,5 @@
 """Telegram alert: message content, idempotency, and the API call (fake session - nothing is sent)."""
+
 from __future__ import annotations
 
 import pandas as pd
@@ -7,20 +8,22 @@ import pytest
 from src.alerts import telegram as tg
 
 WEEK = "2026-W37"
-DF = pd.DataFrame({
-    "district": ["gampaha", "colombo", "kandy", "kalutara", "kegalle", "galle", "nuwara_eliya"],
-    "cases": [218, 207, 174, 73, 69, 69, 14],
-    "change": [-6, -15, 16, 2, 11, 22, -4],
-    "week_start": pd.Timestamp("2026-09-07"),
-})
+DF = pd.DataFrame(
+    {
+        "district": ["gampaha", "colombo", "kandy", "kalutara", "kegalle", "galle", "nuwara_eliya"],
+        "cases": [218, 207, 174, 73, 69, 69, 14],
+        "change": [-6, -15, 16, 2, 11, 22, -4],
+        "week_start": pd.Timestamp("2026-09-07"),
+    }
+)
 
 
 def test_message_has_top5_totals_and_disclaimer():
     msg = tg.build_message(WEEK, DF)
     assert "2026-W37" in msg and "07 Sep - 13 Sep 2026" in msg
-    assert "<b>824</b> (+26 vs last week)" in msg          # 218+207+174+73+69+69+14 = 824; changes sum to +26
+    assert "<b>824</b> (+26 vs last week)" in msg  # 218+207+174+73+69+69+14 = 824; changes sum to +26
     assert "1. Gampaha: 218 (-6)" in msg and "5. Kegalle: 69 (+11)" in msg
-    assert "Galle" not in msg.split("Top 5")[1].split("Biggest")[0]   # 6th place not listed
+    assert "Galle" not in msg.split("Top 5")[1].split("Biggest")[0]  # 6th place not listed
     assert "Biggest rise: Galle +22" in msg
     assert "not official health advice" in msg
 
@@ -66,13 +69,15 @@ def test_send_raises_on_error():
 
 def test_dotenv_loader_does_not_override(tmp_path, monkeypatch):
     from src import config
+
     env = tmp_path / ".env"
     env.write_text("# comment\nDW_TEST_A=from_file\nDW_TEST_B='quoted'\n", encoding="utf-8")
     monkeypatch.setenv("DW_TEST_A", "from_env")
     monkeypatch.delenv("DW_TEST_B", raising=False)
     config._load_dotenv(env)
     import os
-    assert os.environ["DW_TEST_A"] == "from_env"      # real env var wins
+
+    assert os.environ["DW_TEST_A"] == "from_env"  # real env var wins
     assert os.environ["DW_TEST_B"] == "quoted"
     monkeypatch.delenv("DW_TEST_B")
 
@@ -80,4 +85,4 @@ def test_dotenv_loader_does_not_override(tmp_path, monkeypatch):
 def test_message_shows_highest_rate_when_population_loaded():
     df = DF.assign(cases_per_100k=[9.0, 8.0, 12.5, 6.0, 8.1, 6.4, 1.9])
     assert "Highest rate: Kandy 12.5 per 100,000 people" in tg.build_message(WEEK, df)
-    assert "Highest rate" not in tg.build_message(WEEK, DF)          # no census loaded -> no line
+    assert "Highest rate" not in tg.build_message(WEEK, DF)  # no census loaded -> no line

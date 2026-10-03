@@ -1,4 +1,4 @@
--- High-risk MOH areas per NDCU ISO week (Mon -> Sun), as printed on page 2 of the weekly update.
+-- High-risk MOH areas per NDCU ISO week (Mon-Sun), as printed on page 2 of the weekly update.
 select
     iso_year,
     iso_week,

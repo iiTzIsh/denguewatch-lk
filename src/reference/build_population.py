@@ -1,20 +1,9 @@
+"""Parse district population from Census 2024 Table 3.2 (reference/population/CPH2024_Final_Eng.pdf).
+
+Values are checked against totals printed in the report; on any mismatch no CSV is written.
+Run:  python -m src.reference.build_population     (writes district_population_2024.csv)
 """
-District population from the official Census of Population and Housing 2024 (Final Report),
-Department of Census and Statistics Sri Lanka (released 10 April 2026), Table 3.2
-"Distribution of Population by Province and District, 2024".
 
-Input : reference/population/CPH2024_Final_Eng.pdf   (download it in a browser - see reference/population/README.md)
-Output: reference/population/district_population_2024.csv   (district, population, census_year, source)
-
-The numbers are READ from the PDF, never typed in. Then checked against figures printed in the report:
-  - all 25 districts found, each exactly once
-  - national total      = 21,781,800
-  - Gampaha (highest)   =  2,436,142
-  - Mullaitivu (lowest) =    122,619
-Any mismatch -> no CSV is written.
-
-Run:  python -m src.reference.build_population
-"""
 from __future__ import annotations
 
 import logging
@@ -33,9 +22,11 @@ logger = logging.getLogger(__name__)
 POP_DIR = REFERENCE_DIR / "population"
 PDF_PATH = POP_DIR / "CPH2024_Final_Eng.pdf"
 OUT_CSV = POP_DIR / "district_population_2024.csv"
-SOURCE = ("Census of Population and Housing 2024 - Final Report, Department of Census and Statistics "
-          "Sri Lanka (10 Apr 2026), Table 3.2")
-CHECKS = {"total": 21_781_800, "gampaha": 2_436_142, "mullaitivu": 122_619}   # printed in the report text
+SOURCE = (
+    "Census of Population and Housing 2024 - Final Report, Department of Census and Statistics "
+    "Sri Lanka (10 Apr 2026), Table 3.2"
+)
+CHECKS = {"total": 21_781_800, "gampaha": 2_436_142, "mullaitivu": 122_619}  # printed in the report
 
 NUMBER = r"(\d{1,3}(?:,\d{3})+|\d{4,})"
 
@@ -45,23 +36,25 @@ class PopulationError(Exception):
 
 
 def district_names() -> dict[str, str]:
-    """Spelling in the report (lower-case, letters only) -> our district code."""
+    """Map report spellings (lower-case letters only) to district codes."""
     d = pd.read_csv(REFERENCE_DIR / "districts.csv")
     out = {re.sub(r"[^a-z]", "", n.lower()): code for code, n in zip(d["district"], d["district_name"], strict=True)}
     out["nuwaraeliya"] = "nuwara_eliya"
-    out["moneragala"] = "monaragala"          # the census spells it "Moneragala"
+    out["moneragala"] = "monaragala"  # the census spells it "Moneragala"
     return out
 
 
 def find_table_pages(pdf: pdfplumber.PDF) -> list[int]:
-    """The page with the Table 3.2 TITLE (not the table-of-contents line "Table 3.2 ....... 51").
-    Only that page: the next page holds Table 3.3 (1981-2024 history), whose first number is from 1981."""
+    """Return the page index with the Table 3.2 title, skipping the table-of-contents entry.
+
+    The following page (Table 3.3, 1981-2024 history) is deliberately excluded.
+    """
     title = re.compile(r"^\s*Table\s*3\.2\s*:.*District.*2024\s*$", re.MULTILINE)
     return [i for i, p in enumerate(pdf.pages) if title.search(p.extract_text() or "")]
 
 
 def parse_lines(lines: list[str]) -> dict[str, int]:
-    """First number after a district name on a line = that district's total population."""
+    """Take the first number after each district name as its total population."""
     names = district_names()
     found: dict[str, int] = {}
     for line in lines:
@@ -113,8 +106,13 @@ def main(pdf_path: Path = PDF_PATH, out_csv: Path = OUT_CSV) -> int:
         logger.error("Population table rejected: %s (pages %s)", exc, [p + 1 for p in pages])
         return 1
     df.to_csv(out_csv, index=False)
-    logger.info("Wrote %s: %d districts, total %s (all checks passed, PDF pages %s)",
-                out_csv.name, len(df), f"{df['population'].sum():,}", [p + 1 for p in pages])
+    logger.info(
+        "Wrote %s: %d districts, total %s (all checks passed, PDF pages %s)",
+        out_csv.name,
+        len(df),
+        f"{df['population'].sum():,}",
+        [p + 1 for p in pages],
+    )
     return 0
 
 

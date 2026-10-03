@@ -1,5 +1,5 @@
 -- NDCU weekly dengue cases per RDHS region, mapped to district.
--- NOTE: NDCU weeks are ISO weeks (Mon -> Sun), NOT the Sat -> Fri epi weeks used by WER.
+-- NDCU uses ISO weeks (Mon-Sun), not the Sat-Fri epi weeks used by WER.
 select
     n.year,
     n.iso_week,

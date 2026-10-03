@@ -1,12 +1,9 @@
-"""
-Fetch daily weather per DISTRICT (centroids in reference/districts.csv) from the Open-Meteo archive API -> CSV.
+"""Fetch daily weather per district centroid from the Open-Meteo archive API into bronze CSVs.
 
-Run (from project root):
-    python -m src.extract.weather --start 2024-01-01 --end 2024-12-31 --district kandy
-    python -m src.extract.weather --start 2024-01-01 --end 2024-12-31 --district all
-    python -m src.extract.weather --as-of 2026-09-28 --days-back 35 --district all   (what Airflow runs)
-For many years use the resumable backfill:  python -m src.extract.weather_backfill
+Run:  python -m src.extract.weather --start 2024-01-01 --end 2024-12-31 --district all
+      python -m src.extract.weather --as-of 2026-09-28 --days-back 35 --district all   (Airflow)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -22,23 +19,22 @@ import requests
 from src.config import REFERENCE_DIR, WEATHER_BRONZE_DIR, WEATHER_MODEL
 from src.log_setup import setup_logging
 
-logger = logging.getLogger(__name__)  # "src.extract.weather" in log lines
+logger = logging.getLogger(__name__)
 
-# ---- constants (no magic values buried in code) ----
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 DAILY_VARS = [
-    "precipitation_sum",       # rainfall, mm
-    "temperature_2m_mean",     # deg C
+    "precipitation_sum",  # rainfall, mm
+    "temperature_2m_mean",  # deg C
     "temperature_2m_max",
     "temperature_2m_min",
 ]
-# ONE consistent reanalysis for all years (default "best_match" switches to IFS from 2017 -> hidden drift).
-# NOT era5_land: it has no precipitation (Open-Meteo docs) - we learned that from a failed backfill.
-MODEL = WEATHER_MODEL          # "era5_seamless" by default (see src/config.py)
+# One reanalysis for all years: "best_match" switches to IFS from 2017, causing drift.
+# Not era5_land: it has no precipitation.
+MODEL = WEATHER_MODEL
 DISTRICTS_CSV = REFERENCE_DIR / "districts.csv"
 TIMEOUT_S = 30
-ARCHIVE_LAG_DAYS = 6  # ERA5 data arrives ~5 days late -> ask only up to 6 days before the run date
-PAUSE_BETWEEN_CALLS_S = 1.0  # be polite to the free API
+ARCHIVE_LAG_DAYS = 6  # ERA5 lags ~5 days, so request only up to 6 days before the run date
+PAUSE_BETWEEN_CALLS_S = 1.0
 
 
 class WeatherAPIError(Exception):
@@ -46,11 +42,11 @@ class WeatherAPIError(Exception):
 
 
 class RateLimitError(WeatherAPIError):
-    """HTTP 429: free-tier limit reached. Stop now, resume later - don't hammer the API."""
+    """HTTP 429: free-tier limit reached; stop and resume later."""
 
 
 def load_districts(path: Path = DISTRICTS_CSV) -> dict[str, tuple[float, float]]:
-    """{district_slug: (lat, lon)} from the versioned reference file."""
+    """Return {district_slug: (lat, lon)} from the reference file."""
     ref = pd.read_csv(path)
     return {
         str(d): (float(lat), float(lon))
@@ -62,7 +58,7 @@ DISTRICTS = load_districts()
 
 
 def build_params(lat: float, lon: float, start: str, end: str) -> dict[str, Any]:
-    """Query-string params for the archive endpoint. Dates are 'YYYY-MM-DD'."""
+    """Query parameters for the archive endpoint; dates are 'YYYY-MM-DD'."""
     return {
         "latitude": lat,
         "longitude": lon,
@@ -83,10 +79,9 @@ def fetch_daily_weather(
     retries: int = 3,
     backoff_s: float = 2.0,
 ) -> dict[str, Any]:
-    """
-    Call the API and return the JSON payload.
-    - Retries on network errors and 5xx (server) errors, waiting longer each time.
-    - Does NOT retry 4xx (our request is wrong -> retrying won't help).
+    """Call the API and return the JSON payload.
+
+    Retries network errors and 5xx responses with linear backoff; 4xx responses are not retried.
     """
     session = session or requests.Session()
     params = build_params(lat, lon, start, end)
@@ -101,21 +96,21 @@ def fetch_daily_weather(
                 raise RateLimitError(f"Rate limit reached (429): {resp.text[:200]}")
             if 400 <= resp.status_code < 500:
                 raise WeatherAPIError(f"Client error {resp.status_code}: {resp.text[:200]}")
-            resp.raise_for_status()  # raises HTTPError on 5xx
+            resp.raise_for_status()
             return resp.json()
         except WeatherAPIError:
-            raise  # don't retry our own mistakes
+            raise
         except requests.RequestException as exc:
             logger.warning("Attempt %d failed: %s", attempt, exc)
             if attempt == retries:
                 raise WeatherAPIError(f"Gave up after {retries} attempts") from exc
-            time.sleep(backoff_s * attempt)  # 2s, 4s, 6s ...
+            time.sleep(backoff_s * attempt)
 
-    raise WeatherAPIError("unreachable")  # keeps type checkers happy
+    raise WeatherAPIError("unreachable")  # for type checkers
 
 
 def to_dataframe(payload: dict[str, Any]) -> pd.DataFrame:
-    """Turn the API JSON into a tidy DataFrame (one row per day)."""
+    """Convert the API JSON into a DataFrame with one row per day."""
     daily = payload.get("daily")
     if not daily or "time" not in daily:
         raise WeatherAPIError("Payload has no 'daily' data")
@@ -124,17 +119,17 @@ def to_dataframe(payload: dict[str, Any]) -> pd.DataFrame:
     df["date"] = pd.to_datetime(df["date"]).dt.date
     df["latitude"] = payload.get("latitude")
     df["longitude"] = payload.get("longitude")
-    # lineage: WHEN we pulled it -> if two files overlap, the newest pull wins at load time
+    # newest pull wins when files overlap at load time
     df["fetched_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     return df
 
 
-MAX_NULL_SHARE = 0.05   # > 5% missing in any column = reject the pull
+MAX_NULL_SHARE = 0.05  # reject the pull if any column is more than 5% missing
 REQUIRED_COLS = ["date", "rainfall_mm", "temperature_2m_mean", "temperature_2m_max", "temperature_2m_min"]
 
 
 def validate_weather(df: pd.DataFrame) -> pd.DataFrame:
-    """Data-quality checks. Raise on bad data (fail loudly), warn on suspicious data."""
+    """Raise on invalid data, warn on a small number of missing values."""
     missing_cols = [c for c in REQUIRED_COLS if c not in df.columns]
     if missing_cols:
         raise WeatherAPIError(f"Missing columns: {missing_cols}")
@@ -148,7 +143,6 @@ def validate_weather(df: pd.DataFrame) -> pd.DataFrame:
     if df["date"].duplicated().any():
         raise WeatherAPIError("Duplicate dates found")
 
-    # Missing values: a few = warn; a lot = the source is broken -> FAIL LOUDLY (lesson from the ERA5-Land backfill)
     null_share = df[REQUIRED_COLS].isna().mean()
     too_many = null_share[null_share > MAX_NULL_SHARE]
     if not too_many.empty:
@@ -162,7 +156,7 @@ def validate_weather(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def save_csv(df: pd.DataFrame, path: Path) -> Path:
-    """Write CSV, creating folders if needed."""
+    """Write the CSV, creating parent folders if needed."""
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(path, index=False)
     logger.info("Saved %d rows -> %s", len(df), path)
@@ -170,7 +164,7 @@ def save_csv(df: pd.DataFrame, path: Path) -> Path:
 
 
 def valid_date(text: str) -> str:
-    """argparse 'type' function: reject bad dates BEFORE calling the API (fail fast)."""
+    """argparse type that rejects invalid YYYY-MM-DD dates."""
     try:
         date.fromisoformat(text)
     except ValueError as exc:
@@ -179,7 +173,7 @@ def valid_date(text: str) -> str:
 
 
 def window_from_as_of(as_of: str, days_back: int) -> tuple[str, str]:
-    """(start, end) ending ARCHIVE_LAG_DAYS before as_of. Used by the scheduled Airflow run."""
+    """Return a (start, end) window ending ARCHIVE_LAG_DAYS before as_of."""
     end = date.fromisoformat(as_of) - timedelta(days=ARCHIVE_LAG_DAYS)
     start = end - timedelta(days=days_back - 1)
     return start.isoformat(), end.isoformat()
@@ -190,11 +184,11 @@ def output_path(out_dir: Path, district: str, start: str, end: str) -> Path:
 
 
 def run_district(district: str, start: str, end: str, out_dir: Path) -> Path:
-    """Fetch + convert + save for ONE district. Returns the CSV path."""
+    """Fetch, validate and save one district; return the CSV path."""
     lat, lon = DISTRICTS[district]
     payload = fetch_daily_weather(lat, lon, start, end)
     df = validate_weather(to_dataframe(payload))
-    df.insert(0, "district", district)  # first column = which district this row belongs to
+    df.insert(0, "district", district)
     return save_csv(df, output_path(out_dir, district, start, end))
 
 

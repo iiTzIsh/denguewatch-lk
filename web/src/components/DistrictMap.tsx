@@ -49,7 +49,6 @@ export function DistrictMap({
     })),
   }), [geo, data]);
 
-  // create once
   useEffect(() => {
     if (!box.current) return;
     const m = new maplibregl.Map({
@@ -96,7 +95,6 @@ export function DistrictMap({
     };
   }, []);
 
-  // data + colours
   useEffect(() => {
     const m = map.current;
     if (!m || !ready) return;

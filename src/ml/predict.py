@@ -1,15 +1,9 @@
-"""
-Weekly BATCH SCORING: load the @champion model from the MLflow registry, forecast the latest week of
-every region, and write the result to the warehouse (DuckDB  ml.forecast_weekly).
+"""Weekly batch scoring: forecast each region's latest week with @champion into ml.forecast_weekly.
 
-Consumers (dashboard, API, Telegram alert) read the TABLE - they never load the model, so they stay
-light and keep working even if MLflow is down. Every forecast is kept (history), which later lets us
-score forecasts against what really happened.
-
-Run:  python -m src.ml.predict            (fails loudly if MLflow / the champion is missing)
-      python -m src.ml.predict --soft     (warn and exit 0 instead - used inside the weekly pipeline,
-                                           so a missing model never blocks the cases-only alert)
+Run:  python -m src.ml.predict
+      python -m src.ml.predict --soft   (exit 0 if the model is unavailable; used by the weekly pipeline)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -28,23 +22,23 @@ from src.ml.risk import risk_level
 
 logger = logging.getLogger(__name__)
 
-MODEL_NAME = "denguewatch-forecaster"      # same name as src/ml/train.py (kept here to avoid importing mlflow early)
+MODEL_NAME = "denguewatch-forecaster"  # duplicated from train.py to avoid importing mlflow
 ALIAS = "champion"
-MAX_STALENESS_DAYS = 14                    # a region whose last week is >2 weeks behind the newest is skipped
+MAX_STALENESS_DAYS = 14  # skip regions lagging the newest week by more
 
 DDL = """
 CREATE SCHEMA IF NOT EXISTS ml;
 CREATE TABLE IF NOT EXISTS ml.forecast_weekly (
     rdhs             VARCHAR,
     district         VARCHAR,
-    base_week_start  DATE,       -- last week with data (the forecast is made "as of" its end)
+    base_week_start  DATE,       -- last week with data; forecast is as of its end
     base_week_end    DATE,
     horizon_weeks    INTEGER,    -- 2 or 4
     target_week_end  DATE,       -- base_week_end + 7 x horizon
     cases_now        INTEGER,
     pred_cases       DOUBLE,
     outbreak_level   DOUBLE,     -- endemic threshold of the target week (NULL = not enough history)
-    risk_level       VARCHAR,    -- high / watch / normal / unknown  (src/ml/risk.py)
+    risk_level       VARCHAR,    -- high / watch / normal / unknown (src/ml/risk.py)
     model_name       VARCHAR,
     model_version    VARCHAR,
     scored_at        TIMESTAMP
@@ -66,31 +60,35 @@ def latest_rows(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def to_long(rows: pd.DataFrame, pred: pd.DataFrame, version: str, scored_at: datetime) -> pd.DataFrame:
-    """Wide model output (pred_cases_h2, pred_cases_h4) -> one row per region x horizon."""
+    """Reshape wide model output to one row per region and horizon."""
     parts = []
     for h in HORIZONS:
         level = rows[THRESHOLDS[h]].astype(float)
         p = pred[f"pred_cases_h{h}"].astype(float)
-        parts.append(pd.DataFrame({
-            "rdhs": rows["rdhs"],
-            "district": rows["district"],
-            "base_week_start": rows["week_start"].dt.date,
-            "base_week_end": rows["week_end"].dt.date,
-            "horizon_weeks": h,
-            "target_week_end": (rows["week_end"] + pd.Timedelta(days=7 * h)).dt.date,
-            "cases_now": rows["cases"].astype(int),
-            "pred_cases": p,
-            "outbreak_level": level.round(1),
-            "risk_level": risk_level(p, level),
-            "model_name": MODEL_NAME,
-            "model_version": version,
-            "scored_at": scored_at,
-        }))
+        parts.append(
+            pd.DataFrame(
+                {
+                    "rdhs": rows["rdhs"],
+                    "district": rows["district"],
+                    "base_week_start": rows["week_start"].dt.date,
+                    "base_week_end": rows["week_end"].dt.date,
+                    "horizon_weeks": h,
+                    "target_week_end": (rows["week_end"] + pd.Timedelta(days=7 * h)).dt.date,
+                    "cases_now": rows["cases"].astype(int),
+                    "pred_cases": p,
+                    "outbreak_level": level.round(1),
+                    "risk_level": risk_level(p, level),
+                    "model_name": MODEL_NAME,
+                    "model_version": version,
+                    "scored_at": scored_at,
+                }
+            )
+        )
     return pd.concat(parts, ignore_index=True)
 
 
 def write(con: duckdb.DuckDBPyConnection, forecasts: pd.DataFrame) -> int:
-    """Idempotent: re-scoring the same base week with the same model version replaces those rows."""
+    """Replace rows for the same base week and model version, then insert."""
     con.execute(DDL)
     con.register("new_forecasts", forecasts)
     con.execute(
@@ -107,10 +105,10 @@ class MlflowUnreachable(Exception):
 
 
 def check_server(uri: str | None = None, timeout_s: float = 3.0) -> None:
-    """Fail in seconds if the tracking server is down. (MLflow's own client retries with backoff for ~5 min.)"""
+    """Fail fast if the tracking server is down; MLflow's client retries for about 5 minutes."""
     uri = uri or MLFLOW_TRACKING_URI
     if not uri.startswith(("http://", "https://")):
-        return                                          # local file/sqlite store or Databricks: nothing to ping
+        return  # local store or Databricks: nothing to ping
     try:
         resp = requests.get(uri.rstrip("/") + "/health", timeout=timeout_s)
     except requests.RequestException as exc:
@@ -137,7 +135,7 @@ def main() -> int:
 
     try:
         model, version = load_champion()
-    except Exception as exc:  # ImportError (no mlflow), connection refused, no @champion yet ...
+    except Exception as exc:  # no mlflow, server down, or no @champion yet
         msg = f"Cannot load {MODEL_NAME}@{ALIAS} from {MLFLOW_TRACKING_URI}: {type(exc).__name__}: {exc}"
         if args.soft:
             logger.warning("%s - skipping forecasts (--soft)", msg)
@@ -151,8 +149,13 @@ def main() -> int:
     with duckdb.connect(str(DB_PATH)) as con:
         n = write(con, forecasts)
     counts = forecasts.groupby(["horizon_weeks", "risk_level"]).size().to_dict()
-    logger.info("Wrote %d forecasts (model v%s, base week ending %s). Risk counts: %s",
-                n, version, forecasts["base_week_end"].max(), counts)
+    logger.info(
+        "Wrote %d forecasts (model v%s, base week ending %s). Risk counts: %s",
+        n,
+        version,
+        forecasts["base_week_end"].max(),
+        counts,
+    )
     return 0
 
 

@@ -1,13 +1,9 @@
-"""
-Resumable weather BACKFILL: every district, one file per district per year.
+"""Resumable weather backfill: one file per district per year; existing files are skipped.
 
-Run:  python -m src.extract.weather_backfill                     (2006-01-01 -> latest available)
-      python -m src.extract.weather_backfill --from-year 2015
-
-Why chunk by year?  small requests, and if anything fails you only redo that chunk.
-Why resumable?     a file that already exists is SKIPPED -> re-run the same command any time
-                   (after a crash, or the next day if the free daily limit is reached).
+Run:  python -m src.extract.weather_backfill [--from-year 2006]    (up to the latest available day)
+Exit codes: 3 = daily rate limit reached, 4 = API unreachable; re-run later to resume.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 def year_chunks(from_year: int, last_day: date) -> list[tuple[str, str]]:
-    """[(start, end)] per calendar year; the last chunk ends at last_day."""
+    """Return (start, end) per calendar year; the last chunk ends at last_day."""
     chunks = []
     for y in range(from_year, last_day.year + 1):
         start = date(y, 1, 1)
@@ -41,7 +37,7 @@ def year_chunks(from_year: int, last_day: date) -> list[tuple[str, str]]:
 
 
 def plan(from_year: int, last_day: date) -> list[tuple[str, str, str]]:
-    """Every (district, start, end) still missing on disk."""
+    """Return every (district, start, end) chunk not yet on disk."""
     todo = []
     for start, end in year_chunks(from_year, last_day):
         for d in DISTRICTS:
@@ -50,8 +46,8 @@ def plan(from_year: int, last_day: date) -> list[tuple[str, str, str]]:
     return todo
 
 
-MAX_CONSECUTIVE_FAILURES = 5    # 5 failures in a row = API unreachable / no internet -> stop, don't grind 500 calls
-UNREACHABLE = 4                 # exit code
+MAX_CONSECUTIVE_FAILURES = 5  # treat this many failures in a row as "API unreachable"
+UNREACHABLE = 4  # exit code
 
 
 def main() -> None:
@@ -79,8 +75,7 @@ def main() -> None:
             failed.append((district, start))
             in_a_row += 1
             if in_a_row >= MAX_CONSECUTIVE_FAILURES:
-                logger.error("%d chunks failed in a row - Open-Meteo unreachable? Stopping; re-run later to resume.",
-                             in_a_row)
+                logger.error("%d chunks failed in a row - Open-Meteo unreachable? Re-run later to resume.", in_a_row)
                 raise SystemExit(UNREACHABLE) from None
         if i % 25 == 0:
             logger.info("Progress: %d / %d", i, len(todo))

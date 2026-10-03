@@ -89,7 +89,7 @@ function Story({ hot }: { hot: HotspotsResponse }) {
 function EpidemicCurve({ national, week }: { national: NationalPoint[]; week: string }) {
   const { resolved } = useTheme();
   const option = useMemo(() => {
-    // one slot per calendar week, so a week NDCU didn't publish shows as a gap (never a fake straight line)
+    // one slot per calendar week, so an unpublished NDCU week shows as a gap, not a line
     const byStart = new Map(national.map((p) => [p.week_start, p]));
     const slots: { start: string; p?: NationalPoint }[] = [];
     for (let s = national[0].week_start; s <= national[national.length - 1].week_start; s = addDays(s, 7)) {
@@ -100,7 +100,7 @@ function EpidemicCurve({ national, week }: { national: NationalPoint[]; week: st
     const peakIdx = slots.findIndex((x) => x.p?.week === peak.week);
     const base = chartBase(cssVar);
     const ember = cssVar("--ember");
-    // a week with no reported neighbour on either side can't form a line: draw it as a dot so it never disappears
+    // an isolated week can't form a line segment, so draw it as a dot
     const lone = slots.map((x, i) => !!x.p && !slots[i - 1]?.p && !slots[i + 1]?.p);
     return {
       grid: { left: 8, right: 16, top: 28, bottom: 4, containLabel: true },

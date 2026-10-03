@@ -1,9 +1,9 @@
-# Connection settings. Reads the same env vars as src/config.py.
-# Run dbt from the PROJECT ROOT:  dbt build --project-dir dbt --profiles-dir dbt
+# Uses the same env vars as src/config.py. Run from the repo root:
+#   dbt build --project-dir dbt --profiles-dir dbt
 denguewatch:
   target: dev
   outputs:
     dev:
       type: duckdb
       path: "{{ env_var('DW_DB_PATH', env_var('DW_DATA_DIR', 'data') ~ '/denguewatch.duckdb') }}"
-      threads: 1             # DuckDB = one writer at a time
+      threads: 1             # DuckDB allows a single writer

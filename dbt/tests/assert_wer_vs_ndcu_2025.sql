@@ -1,9 +1,8 @@
 {{ config(severity='warn') }}
--- CROSS-SOURCE CHECK: two independent government sources should roughly agree.
--- Each NDCU weekly PDF prints last year's (2025) cumulative cases up to that week; WER history has 2025 week by week.
--- A WER week counts toward 2025 if it ENDS in 2025 (WER's "2025 week 1" ran 21-27 Dec 2024).
--- WER weeks run Sat->Fri, NDCU's Mon->Sun: that 2-day shift is ~300 cases, so allow 5% or 400 cases,
--- whichever is bigger (observed: within 4% from week 5 on; 5-7% in weeks 2-4, where the total is still small).
+-- Cross-source check: NDCU's printed 2025 cumulative vs the WER 2025 weekly history.
+-- A WER week counts toward 2025 if it ends in 2025 (WER's "2025 week 1" ran 21-27 Dec 2024).
+-- The Sat-Fri vs Mon-Sun shift is ~300 cases, so allow the larger of 5% or 400 cases
+-- (observed: within 4% from week 5 on; 5-7% in weeks 2-4 while totals are small).
 with ndcu as (
     select year, iso_week, max(week_end) as week_end, sum(cum_prev_year) as ndcu_cum_2025
     from {{ source('silver', 'ndcu_weekly_cases') }}

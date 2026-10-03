@@ -1,5 +1,5 @@
 -- WER history per RDHS region and reported week, mapped to district.
--- Weeks are kept EXACTLY as reported (start/end dates), because the week definition changed in 2026.
+-- Weeks keep their reported start/end dates because the week definition changed in 2026.
 select
     w.year,
     w.week,
