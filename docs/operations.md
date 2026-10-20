@@ -105,6 +105,25 @@ Every step is idempotent and can be re-run safely.
 3. Airflow DAG integrity
 4. web dashboard type check and production build
 
+## Hosted dashboard (Vercel)
+
+The public dashboard is a static build of `web/` on Vercel. It has no API or warehouse behind it:
+`python -m src.export_static` writes the response of every endpoint the dashboard uses (all weeks and
+districts, about 130 files, 1 MB) to `web/public/data/`, and `npm run build:static` makes the app read those
+files. The files are committed, and Vercel rebuilds on every push to `main`.
+
+Vercel project settings: import the GitHub repository, set **Root Directory** to `web`; the framework, build
+command (`npm run build:static`) and output folder come from `web/vercel.json`.
+
+Weekly update, after the pipeline has run:
+
+```bash
+python -m src.export_static
+git add web/public/data && git commit -m "Dashboard data to <date>" && git push
+```
+
+The hosted site shows the data as of the last export ("Cases to ..." in the header).
+
 ## Troubleshooting
 
 | Symptom | Cause | Action |

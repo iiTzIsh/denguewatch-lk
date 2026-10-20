@@ -8,8 +8,35 @@ export class ApiError extends Error {
   }
 }
 
+// Hosted build (Vercel): no API behind the site, so read the JSON files written by
+// `python -m src.export_static` (web/public/data). Each file is the response of one endpoint.
+const STATIC = import.meta.env.VITE_STATIC_DATA === "1";
+
+const slug = (d: string) => d.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+function staticPath(path: string): string {
+  const [route, query = ""] = path.split("?");
+  const params = new URLSearchParams(query);
+  const week = params.get("week") ?? "";
+  const district = route.match(/^\/districts\/([^/]+)\/(trend|rain)$/);
+  if (district) return `districts/${slug(decodeURIComponent(district[1]))}/${district[2]}.json`;
+  switch (route) {
+    case "/health": return "health.json";
+    case "/weeks": return "weeks.json";
+    case "/national/trend": return "national.json";
+    case "/forecast": return "forecast.json";
+    case "/model/health": return "model-health.json";
+    case "/model/forecast-vs-actual": return `accuracy-${params.get("horizon") ?? "4"}.json`;
+    case "/hotspots": return `hotspots/${week}.json`;
+    case "/moh/hotspots": return `moh/${week}.json`;
+    case "/geo/districts": return "districts.geojson";
+  }
+  throw new Error(`No static file for ${path}`);
+}
+
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`/api${path}`);
+  const url = STATIC ? `${import.meta.env.BASE_URL}data/${staticPath(path)}` : `/api${path}`;
+  const res = await fetch(url);
   if (!res.ok) {
     let detail = res.statusText;
     try {

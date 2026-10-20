@@ -38,4 +38,5 @@ Light and dark themes have their own chart palettes, checked for colour-vision d
 uvicorn src.api.main:app --port 8000      # terminal 1, project root
 cd web && npm install && npm run dev      # terminal 2, http://localhost:3000
 npm run build                             # type check and production build (run in CI)
+npm run build:static                      # hosted build reading web/public/data/ (see operations.md)
 ```

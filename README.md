@@ -9,6 +9,8 @@ regions that are heading above their usual outbreak level.
 > **Disclaimer:** this is a portfolio project, not official health advice. For official figures see the
 > [National Dengue Control Unit](https://www.dengue.health.gov.lk/).
 
+**Live dashboard:** hosted on Vercel, data as of the last weekly export ([how it works](docs/operations.md#hosted-dashboard-vercel)).
+
 ![Dashboard](docs/images/web_1_hero.png)
 
 ## Why
@@ -100,6 +102,9 @@ pytest && ruff check . && ruff format --check . && mypy src
 ```
 
 Dashboard with live reload (Node 22+, API on port 8000): `cd web && npm install && npm run dev`.
+
+Refresh the hosted dashboard's data after a pipeline run: `python -m src.export_static`, then commit and push
+`web/public/data/`.
 
 ## Project layout
 
