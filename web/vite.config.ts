@@ -4,6 +4,9 @@ import tailwindcss from "@tailwindcss/vite";
 
 // Dev: the dashboard calls /api/... and Vite forwards it to FastAPI on :8000 (no CORS needed).
 // Docker: nginx does the same forwarding (web/nginx.conf).
+// Vercel: there is no API, so any Vercel build reads the static exports in public/data (src/api.ts).
+if (process.env.VERCEL) process.env.VITE_STATIC_DATA ??= "1";
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {

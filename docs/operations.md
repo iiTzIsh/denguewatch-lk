@@ -112,9 +112,11 @@ The public dashboard is a static build of `web/` on Vercel. It has no API or war
 districts, about 130 files, 1 MB) to `web/public/data/`, and `npm run build:static` makes the app read those
 files. The files are committed, and Vercel rebuilds on every push to `main`.
 
-Vercel project settings: import the GitHub repository and keep the defaults (Root Directory `./`). The
-root `vercel.json` installs and builds only `web/` (`npm run build:static`) and serves `web/dist`; it is a
-single static site, not a multi-service project, because the API needs the warehouse file, which is not in git.
+Vercel project settings: import the GitHub repository and set **Root Directory** to `web` (Vercel then sees a
+plain Vite app). Any build on Vercel uses the static data, because `vite.config.ts` turns on static mode when the
+`VERCEL` variable is set. Importing from the repository root also works: the root `vercel.json` builds only
+`web/`. It is a single static site, not a multi-service project, because the API needs the warehouse file,
+which is not in git.
 
 Weekly update, after the pipeline has run:
 

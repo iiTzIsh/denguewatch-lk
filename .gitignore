@@ -8,7 +8,7 @@ __pycache__/
 .coverage
 
 # Local data and logs
-data/
+/data/
 *.duckdb
 logs/
 .env
