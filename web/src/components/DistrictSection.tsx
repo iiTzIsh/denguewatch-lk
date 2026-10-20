@@ -6,6 +6,9 @@ import { EChart, chartBase } from "./EChart";
 import { Picker, Section, Skeleton } from "./ui";
 
 const LEAD_WEEKS = 6; // rain matters before cases, so the rain chart starts earlier
+// Window searched for "heaviest rain before the peak". Sri Lankan studies report lags from 3-4 weeks
+// (Goto et al. 2013) to about 3 months (Withanage et al. 2018); rain further back is a different season.
+const RAIN_LAG_WEEKS = { min: 2, max: 12 };
 
 export function DistrictSection({ hot, district, onSelect }: { hot?: HotspotsResponse; district?: string; onSelect: (d: string) => void }) {
   const trend = useDistrictTrend(district);
@@ -45,9 +48,12 @@ export function DistrictSection({ hot, district, onSelect }: { hot?: HotspotsRes
 
     // a data-derived reading, not a claim of cause
     const peakI = caseVals.reduce<number>((bi, v, i) => ((v ?? -1) > (caseVals[bi] ?? -1) ? i : bi), 0);
-    const rainI = rainVals.slice(0, peakI + 1).reduce<number>((bi, v, i) => ((v ?? -1) > (rainVals[bi] ?? -1) ? i : bi), 0);
-    const note = peakI > rainI && rainVals[rainI] != null
-      ? `Heaviest rain before the peak: ${fmt(rainVals[rainI])} mm in the week of ${day(slots[rainI])}. Cases peaked ${peakI - rainI} weeks later, with ${fmt(caseVals[peakI])} in the week of ${day(slots[peakI])}.`
+    let rainI = -1;
+    for (let i = Math.max(0, peakI - RAIN_LAG_WEEKS.max); i <= peakI - RAIN_LAG_WEEKS.min; i++) {
+      if (rainVals[i] != null && (rainI < 0 || rainVals[i]! > rainVals[rainI]!)) rainI = i;
+    }
+    const note = rainI >= 0
+      ? `Heaviest rain in the ${RAIN_LAG_WEEKS.min}-${RAIN_LAG_WEEKS.max} weeks before the peak: ${fmt(rainVals[rainI])} mm in the week of ${day(slots[rainI])}. Cases peaked ${peakI - rainI} weeks later, with ${fmt(caseVals[peakI])} in the week of ${day(slots[peakI])}.`
       : null;
 
     return {

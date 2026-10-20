@@ -27,6 +27,8 @@ Light and dark themes have their own chart palettes, checked for colour-vision d
   as a dot.
 - **MOH areas**: NDCU lists only high-risk areas; an area missing from the list was not high-risk that week.
   Parent areas ("split from") come from an unofficial mapping and are marked unverified.
+- **District close-up** names the heaviest rain 2-12 weeks before the district's case peak (the lag range in
+  the Sri Lankan studies), not the heaviest rain in the whole chart, which can be the previous monsoon season.
 - **Model section** uses the live champion's forecasts once it has at least 50 scored forecasts, and the as-of
   replay before that.
 - **Counts vs rates**: forecasts are in cases per health region because Census 2024 population is published per
