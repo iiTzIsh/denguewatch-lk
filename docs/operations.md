@@ -112,8 +112,9 @@ The public dashboard is a static build of `web/` on Vercel. It has no API or war
 districts, about 130 files, 1 MB) to `web/public/data/`, and `npm run build:static` makes the app read those
 files. The files are committed, and Vercel rebuilds on every push to `main`.
 
-Vercel project settings: import the GitHub repository, set **Root Directory** to `web`; the framework, build
-command (`npm run build:static`) and output folder come from `web/vercel.json`.
+Vercel project settings: import the GitHub repository and keep the defaults (Root Directory `./`). The
+root `vercel.json` installs and builds only `web/` (`npm run build:static`) and serves `web/dist`; it is a
+single static site, not a multi-service project, because the API needs the warehouse file, which is not in git.
 
 Weekly update, after the pipeline has run:
 

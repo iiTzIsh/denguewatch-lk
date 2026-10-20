@@ -27,4 +27,5 @@ Requests to `/api/*` are proxied to the API by Vite in development (`vite.config
 
 The hosted dashboard is a static site: `npm run build:static` (mode `static`, `.env.static`) makes `src/api.ts`
 read `public/data/*.json` instead of calling `/api`. Those files are written by `python -m src.export_static`
-from the project root and are committed. `vercel.json` sets the build command and cache headers.
+from the project root and are committed. The root `vercel.json` builds this folder in that mode and sets the
+cache headers.
