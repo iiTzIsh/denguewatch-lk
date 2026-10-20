@@ -114,8 +114,7 @@ files. The files are committed, and Vercel rebuilds on every push to `main`.
 
 Vercel project settings: import the GitHub repository and set **Root Directory** to `web` (Vercel then sees a
 plain Vite app). Any build on Vercel uses the static data, because `vite.config.ts` turns on static mode when the
-`VERCEL` variable is set. Importing from the repository root also works: the root `vercel.json` builds only
-`web/`. It is a single static site, not a multi-service project, because the API needs the warehouse file,
+`VERCEL` variable is set. `web/vercel.json` only sets cache headers. It is a single static site, not a multi-service project, because the API needs the warehouse file,
 which is not in git.
 
 Weekly update, after the pipeline has run:
