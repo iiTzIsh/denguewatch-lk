@@ -24,6 +24,7 @@ reference/population/*.pdf
 # Web dashboard
 web/node_modules/
 web/dist/
+web/*.tsbuildinfo
 
 # Airflow
 infra/airflow/config/airflow.cfg
